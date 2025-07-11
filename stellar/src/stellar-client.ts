@@ -46,27 +46,31 @@ export interface StellarBridgeResult {
 export default class StellarClient {
   private htlcManager: StellarHTLCManager;
   private config: StellarConfig;
+  private relayerSecretKey: string;
 
-  constructor(isTestnet: boolean = true) {
+  constructor(isTestnet: boolean = true, relayerSecretKey?: string) {
     this.config = isTestnet ? createTestnetConfig() : createMainnetConfig();
     this.htlcManager = new StellarHTLCManager(this.config);
+    
+    // Use provided secret key or get from environment
+    this.relayerSecretKey = relayerSecretKey || 
+      process.env.RELAYER_STELLAR_SECRET || 
+      'SAMPLERELAYERSECRETKEYFORTEST12345678901234567890';
   }
 
   /**
    * Create HTLC claimable balance in response to Ethereum order
    * @param order Cross-chain order from Ethereum
-   * @param relayerSecretKey Relayer's Stellar secret key
    * @returns Bridge transaction result
    */
   async createHTLCFromEthereumOrder(
-    order: CrossChainOrder,
-    relayerSecretKey: string
+    order: CrossChainOrder
   ): Promise<StellarBridgeResult> {
     try {
       console.log(`🌉 Creating Stellar HTLC for Ethereum order ${order.ethereumOrderId}`);
 
       const params: HTLCClaimableBalanceParams = {
-        sourceSecretKey: relayerSecretKey,
+        sourceSecretKey: this.relayerSecretKey,
         recipientPublicKey: order.recipient,
         assetCode: this.mapEthereumTokenToStellar(order.token),
         amount: order.amount,
@@ -98,19 +102,17 @@ export default class StellarClient {
    * Claim Stellar claimable balance with preimage
    * @param balanceId Claimable balance ID
    * @param preimage Secret preimage
-   * @param claimerSecretKey Claimer's secret key
    * @returns Bridge transaction result
    */
   async claimStellarHTLC(
     balanceId: string,
-    preimage: string,
-    claimerSecretKey: string
+    preimage: string
   ): Promise<StellarBridgeResult> {
     try {
       console.log(`🔑 Claiming Stellar HTLC: ${balanceId}`);
 
       const claimParams: ClaimParams = {
-        claimerSecretKey,
+        claimerSecretKey: this.relayerSecretKey,
         balanceId,
         preimage,
       };
@@ -135,18 +137,16 @@ export default class StellarClient {
   /**
    * Refund expired Stellar claimable balance
    * @param balanceId Claimable balance ID
-   * @param refunderSecretKey Refunder's secret key
    * @returns Bridge transaction result
    */
   async refundStellarHTLC(
-    balanceId: string,
-    refunderSecretKey: string
+    balanceId: string
   ): Promise<StellarBridgeResult> {
     try {
       console.log(`🔄 Refunding expired Stellar HTLC: ${balanceId}`);
 
       const refundParams: RefundParams = {
-        refunderSecretKey,
+        refunderSecretKey: this.relayerSecretKey,
         balanceId,
       };
 

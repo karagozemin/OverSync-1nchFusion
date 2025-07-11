@@ -3,7 +3,12 @@
  * @description Monitors Ethereum events and coordinates Stellar transactions
  */
 
-import 'dotenv/config'; // Load environment variables
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load environment variables from root directory
+config({ path: resolve(process.cwd(), '../.env') });
+import { ethereumListener } from './ethereum-listener.js';
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
@@ -120,9 +125,36 @@ async function initializeRelayer() {
     console.warn('🔧 Maintenance mode is active');
   }
   
+  // Start Ethereum event listener
+  try {
+    await ethereumListener.startListening();
+  } catch (error) {
+    console.error('❌ Failed to start Ethereum listener:', error);
+    process.exit(1);
+  }
+  
   console.log('✅ Relayer service initialized successfully');
   console.log('🎯 Ready to process cross-chain swaps');
 }
+
+// Graceful shutdown handler
+async function gracefulShutdown() {
+  console.log('\n🛑 Shutting down relayer service...');
+  
+  try {
+    await ethereumListener.stopListening();
+    console.log('✅ Ethereum listener stopped');
+  } catch (error) {
+    console.error('❌ Error stopping Ethereum listener:', error);
+  }
+  
+  console.log('👋 Relayer service shutdown complete');
+  process.exit(0);
+}
+
+// Handle shutdown signals
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 // Start relayer if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
