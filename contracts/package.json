@@ -1,0 +1,36 @@
+{
+  "name": "@fusionbridge/contracts",
+  "version": "1.0.0",
+  "description": "Ethereum smart contracts for FusionBridge cross-chain token swaps",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network mainnet", 
+    "verify": "hardhat verify",
+    "clean": "hardhat clean && rm -rf artifacts cache",
+    "lint": "solhint 'contracts/**/*.sol'",
+    "coverage": "hardhat coverage"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^1.1.0",
+    "@typechain/hardhat": "^9.1.0",
+    "hardhat": "^2.19.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solhint": "^4.1.0",
+    "solidity-coverage": "^0.8.5"
+  },
+  "keywords": [
+    "ethereum",
+    "solidity",
+    "smart-contracts", 
+    "htlc",
+    "cross-chain",
+    "defi"
+  ]
+} 
