@@ -24,6 +24,7 @@ function App() {
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
+    console.log('MetaMask connect clicked!'); // Debug
     setIsConnecting(true);
     setConnectionError('');
     
@@ -47,8 +48,9 @@ function App() {
     }
   };
 
-  // Freighter bağlantısı
+  // Freighter bağlantısı  
   const connectFreighter = async () => {
+    console.log('Freighter connect clicked!'); // Debug
     setIsConnecting(true);
     setConnectionError('');
     
@@ -126,7 +128,7 @@ function App() {
 
             {/* Wallet Dropdown Menu */}
             {showWalletMenu && (
-              <div className="absolute top-full right-0 mt-2 w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-50 p-4">
+              <div className="absolute top-full right-0 mt-2 w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-[100] p-4">
                 <h3 className="text-white font-semibold mb-4 text-center">Connect Wallets</h3>
                 
                 {connectionError && (
@@ -135,8 +137,8 @@ function App() {
                   </div>
                 )}
 
-                {/* MetaMask */}
-                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10 hover:border-orange-500/30 transition-all duration-200">
+                                {/* MetaMask */}
+                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">🦊</span>
@@ -158,9 +160,15 @@ function App() {
                       </div>
                     ) : (
                       <button
-                        onClick={connectMetaMask}
-                        disabled={isConnecting}
-                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50"
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('MetaMask button mousedown');
+                          connectMetaMask();
+                        }}
+                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
+                        style={{ pointerEvents: 'auto' }}
                       >
                         {isConnecting ? 'Connecting...' : 'Connect'}
                       </button>
@@ -168,8 +176,8 @@ function App() {
                   </div>
                 </div>
 
-                {/* Freighter */}
-                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10 hover:border-blue-500/30 transition-all duration-200">
+                                {/* Freighter */}
+                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">🚀</span>
@@ -191,9 +199,15 @@ function App() {
                       </div>
                     ) : (
                       <button
-                        onClick={connectFreighter}
-                        disabled={isConnecting}
-                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50"
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('Freighter button mousedown');
+                          connectFreighter();
+                        }}
+                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
+                        style={{ pointerEvents: 'auto' }}
                       >
                         {isConnecting ? 'Connecting...' : 'Connect'}
                       </button>
@@ -246,12 +260,7 @@ function App() {
       </div>
 
       {/* Dropdown kapatma için overlay */}
-      {showWalletMenu && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setShowWalletMenu(false)}
-        />
-      )}
+
     </div>
   )
 }
