@@ -1,5 +1,11 @@
 import { useState } from 'react';
 
+// Props interface
+interface BridgeFormProps {
+  ethAddress: string;
+  stellarAddress: string;
+}
+
 interface Token {
   symbol: string;
   name: string;
@@ -8,8 +14,6 @@ interface Token {
   chainIcon: string;
   price?: number; // USD fiyatı için
 }
-
-
 
 const TOKENS: Record<string, Token[]> = {
   ethereum: [
@@ -24,13 +28,17 @@ const TOKENS: Record<string, Token[]> = {
   ]
 };
 
-export default function BridgeForm() {
+export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormProps) {
   const [fromToken, setFromToken] = useState<Token>(TOKENS.ethereum[0]);
   const [toToken, setToToken] = useState<Token>(TOKENS.stellar[0]);
   const [fromAmount, setFromAmount] = useState<string>('1');
-  const [isConnected, setIsConnected] = useState(false);
   const [showFromTokens, setShowFromTokens] = useState(false);
   const [showToTokens, setShowToTokens] = useState(false);
+  
+  // Bridge transaction states
+  const [isBridging, setIsBridging] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState<string>('');
+  const [bridgeError, setBridgeError] = useState<string>('');
 
   // Mock bakiye
   const mockBalance = 12.5047;
@@ -82,6 +90,74 @@ export default function BridgeForm() {
     return allTokens.filter(token => token.symbol !== currentToken.symbol);
   };
 
+  // Bridge işlemi
+  const handleBridge = async () => {
+    // Cüzdan kontrolü
+    if (!ethAddress || !stellarAddress) {
+      setBridgeError('Lütfen önce her iki cüzdanı da bağlayın! Sağ üstteki "Connect Wallet" butonunu kullanın. 🦊🚀');
+      setTimeout(() => setBridgeError(''), 5000);
+      return;
+    }
+
+    // Miktar kontrolü
+    if (!fromAmount || Number(fromAmount) <= 0) {
+      setBridgeError('Lütfen geçerli bir miktar girin!');
+      setTimeout(() => setBridgeError(''), 5000);
+      return;
+    }
+
+    setIsBridging(true);
+    setBridgeError('');
+    setBridgeStatus('Bridge işlemi başlatılıyor... ⏳');
+
+    try {
+      const bridgeData = {
+        fromToken: {
+          symbol: fromToken.symbol,
+          chain: fromToken.chain,
+          address: fromToken.chain === 'Ethereum' ? ethAddress : stellarAddress
+        },
+        toToken: {
+          symbol: toToken.symbol,
+          chain: toToken.chain,
+          address: toToken.chain === 'Ethereum' ? ethAddress : stellarAddress
+        },
+        amount: fromAmount,
+        ethAddress,
+        stellarAddress,
+        timestamp: Date.now()
+      };
+
+      const response = await fetch('http://localhost:3001/create-htlc', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bridgeData)
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setBridgeStatus(`Bridge başarılı! 🎉 TX: ${result.transactionId || 'Pending'}`);
+        // İsteğe bağlı: Form resetleme
+        // setFromAmount('');
+      } else {
+        throw new Error(result.message || 'Bridge işlemi başarısız');
+      }
+
+    } catch (error: any) {
+      setBridgeError(`Bridge hatası: ${error.message}`);
+    } finally {
+      setIsBridging(false);
+      setTimeout(() => setBridgeStatus(''), 10000);
+    }
+  };
+
+  // Cüzdan durumu kontrolü
+  const isWalletsConnected = ethAddress && stellarAddress;
+  const canBridge = isWalletsConnected && fromAmount && Number(fromAmount) > 0;
+
   return (
     <div className="w-full max-w-lg mx-auto relative z-10">
       {/* Main Swap Container */}
@@ -90,7 +166,7 @@ export default function BridgeForm() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-white">Swap</h2>
+            <h2 className="text-2xl font-bold text-white">Bridge</h2>
             <span className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full border border-blue-500/30">
               Beta
             </span>
@@ -109,9 +185,41 @@ export default function BridgeForm() {
           </div>
         </div>
 
+        {/* Wallet Status Overview */}
+        {(ethAddress || stellarAddress) && (
+          <div className="mb-6 p-4 bg-white/5 rounded-xl border border-white/10">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-300 text-sm">Wallet Status:</span>
+              <div className="flex gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">🦊</span>
+                  <div className={`w-2 h-2 rounded-full ${ethAddress ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">🚀</span>
+                  <div className={`w-2 h-2 rounded-full ${stellarAddress ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Status Messages */}
+        {bridgeStatus && (
+          <div className="mb-6 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
+            <p className="text-green-300 text-sm font-medium">{bridgeStatus}</p>
+          </div>
+        )}
+
+        {bridgeError && (
+          <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl">
+            <p className="text-red-300 text-sm font-medium">{bridgeError}</p>
+          </div>
+        )}
+
         {/* You Pay Section */}
         <div className="mb-6">
-          <label className="block text-gray-300 text-sm font-medium mb-3">You pay</label>
+          <label className="block text-gray-300 text-sm font-medium mb-3">You send</label>
           <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-200 shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <div className="relative">
@@ -281,7 +389,7 @@ export default function BridgeForm() {
             </span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Network Fee</span>
+            <span className="text-gray-400">Bridge Fee</span>
             <span className="text-green-400 font-medium flex items-center gap-1">
               ⚡ Free
             </span>
@@ -294,40 +402,18 @@ export default function BridgeForm() {
 
         {/* Main Action Button */}
         <button 
-          onClick={() => setIsConnected(!isConnected)}
-          className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white text-lg font-bold py-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-[1.02] mb-6"
+          onClick={handleBridge}
+          disabled={!canBridge || isBridging}
+          className={`w-full text-lg font-bold py-4 rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-[1.02] mb-6 ${
+            canBridge && !isBridging
+              ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 hover:shadow-2xl text-white'
+              : 'bg-gray-600 text-gray-300 cursor-not-allowed'
+          }`}
         >
-          {isConnected ? 'Swap Tokens' : 'Connect Wallet to Swap'}
+          {isBridging ? 'Bridging... ⏳' : 
+           !isWalletsConnected ? 'Connect Wallets First' : 
+           'Bridge Tokens 🌉'}
         </button>
-
-        {/* Wallet Status Grid */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 hover:border-orange-500/30 hover:bg-orange-500/5 transition-all duration-200 cursor-pointer group">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-2xl group-hover:scale-110 transition-transform duration-200">🦊</span>
-              <span className="text-white font-semibold">MetaMask</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-              <span className={`text-xs font-medium ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                {isConnected ? 'Connected' : 'Not Connected'}
-              </span>
-            </div>
-          </div>
-          
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all duration-200 cursor-pointer group">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-2xl group-hover:scale-110 transition-transform duration-200">🚀</span>
-              <span className="text-white font-semibold">Freighter</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-              <span className={`text-xs font-medium ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                {isConnected ? 'Connected' : 'Not Connected'}
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Additional Info Card */}
