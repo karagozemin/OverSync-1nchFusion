@@ -70,9 +70,47 @@ fusionbridge/
 git clone https://github.com/your-username/fusionbridge.git
 cd fusionbridge
 
+# Setup environment variables
+cp env.template .env
+# Edit .env with your actual configuration values
+
 # Install dependencies for all workspaces
 pnpm install
 ```
+
+### Environment Configuration
+
+Before running the project, you need to configure environment variables:
+
+1. **Copy the environment template:**
+   ```bash
+   cp env.template .env
+   ```
+
+2. **Edit `.env` with your configuration:**
+   ```bash
+   # Required for development:
+   ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
+   STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
+   
+   # Generate new private keys (NEVER use the examples in production!)
+   RELAYER_PRIVATE_KEY=0x[your-ethereum-private-key]
+   RELAYER_STELLAR_SECRET=S[your-stellar-secret-key]
+   
+   # Optional API keys:
+   ETHERSCAN_API_KEY=YOUR_ETHERSCAN_API_KEY
+   VITE_WALLET_CONNECT_PROJECT_ID=YOUR_WALLET_CONNECT_PROJECT_ID
+   ```
+
+3. **Key Generation (for testnet):**
+   ```bash
+   # Generate Ethereum keypair
+   openssl rand -hex 32
+   
+   # Generate Stellar keypair at https://laboratory.stellar.org/#account-creator
+   ```
+
+> ⚠️ **Security Note**: Never commit real private keys to git. The `.env` file is already in `.gitignore`.
 
 ### Development
 
