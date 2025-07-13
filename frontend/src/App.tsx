@@ -12,6 +12,14 @@ declare global {
       getPublicKey: () => Promise<string>;
       isConnected: () => Promise<boolean>;
     };
+    freighter?: {
+      getPublicKey: () => Promise<string>;
+      isConnected: () => Promise<boolean>;
+    };
+    stellar?: {
+      getPublicKey: () => Promise<string>;
+      isConnected: () => Promise<boolean>;
+    };
   }
 }
 
@@ -51,21 +59,47 @@ function App() {
   // Freighter bağlantısı  
   const connectFreighter = async () => {
     console.log('Freighter connect clicked!'); // Debug
+    console.log('window.freighterApi:', window.freighterApi); // Debug
+    console.log('All window keys:', Object.keys(window).filter(key => key.toLowerCase().includes('freighter')));
+    
     setIsConnecting(true);
     setConnectionError('');
     
     try {
-      if (!window.freighterApi) {
-        throw new Error('Freighter bulunamadı! Lütfen Freighter yükleyin.');
-      }
-
-      const publicKey = await window.freighterApi.getPublicKey();
-      
-      if (publicKey) {
-        setStellarAddress(publicKey);
-        setShowWalletMenu(false);
+      // Freighter API'lerini kontrol et
+      if (window.freighterApi) {
+        console.log('Using window.freighterApi');
+        const publicKey = await window.freighterApi.getPublicKey();
+        if (publicKey) {
+          setStellarAddress(publicKey);
+          setShowWalletMenu(false);
+        }
+      } else if ((window as any).freighter) {
+        console.log('Using window.freighter');
+        const publicKey = await (window as any).freighter.getPublicKey();
+        if (publicKey) {
+          setStellarAddress(publicKey);
+          setShowWalletMenu(false);
+        }
+      } else if ((window as any).stellar) {
+        console.log('Using window.stellar');
+        const publicKey = await (window as any).stellar.getPublicKey();
+        if (publicKey) {
+          setStellarAddress(publicKey);
+          setShowWalletMenu(false);
+        }
+      } else {
+        // Son çare: tüm window objelerini listele
+        console.log('Freighter API bulunamadı. Mevcut window objeleri:');
+        console.log(Object.keys(window).filter(key => 
+          key.toLowerCase().includes('stellar') || 
+          key.toLowerCase().includes('freighter') ||
+          key.toLowerCase().includes('wallet')
+        ));
+        throw new Error('Freighter wallet bulunamadı! Lütfen Freighter extension\'ı yükleyin ve aktif edin.');
       }
     } catch (error: any) {
+      console.error('Freighter connection error:', error);
       setConnectionError(`Freighter: ${error.message}`);
     } finally {
       setIsConnecting(false);
