@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import BridgeForm from './components/BridgeForm'
+import FreighterTest from './components/FreighterTest'
+import { useFreighter } from './hooks/useFreighter'
 
 // Window objeleri için type definitions
 declare global {
@@ -8,27 +10,24 @@ declare global {
       request: (args: { method: string; params?: any[] }) => Promise<any>;
       selectedAddress?: string;
     };
-    freighterApi?: {
-      getPublicKey: () => Promise<string>;
-      isConnected: () => Promise<boolean>;
-    };
-    freighter?: {
-      getPublicKey: () => Promise<string>;
-      isConnected: () => Promise<boolean>;
-    };
-    stellar?: {
-      getPublicKey: () => Promise<string>;
-      isConnected: () => Promise<boolean>;
-    };
   }
 }
 
 function App() {
   const [ethAddress, setEthAddress] = useState<string>('');
-  const [stellarAddress, setStellarAddress] = useState<string>('');
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
+  
+  // Freighter hook usage
+  const {
+    isConnected: stellarConnected,
+    address: stellarAddress,
+    isLoading: stellarLoading,
+    error: stellarError,
+    connect: connectFreighter,
+    disconnect: disconnectFreighter,
+  } = useFreighter();
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
@@ -56,65 +55,25 @@ function App() {
     }
   };
 
-  // Freighter bağlantısı  
-  const connectFreighter = async () => {
-    console.log('Freighter connect clicked!'); // Debug
-    console.log('window.freighterApi:', window.freighterApi); // Debug
-    console.log('All window keys:', Object.keys(window).filter(key => key.toLowerCase().includes('freighter')));
-    
-    setIsConnecting(true);
-    setConnectionError('');
-    
+  // Freighter bağlantısı - Hook kullanarak
+  const handleFreighterConnect = async () => {
     try {
-      // Freighter API'lerini kontrol et
-      if (window.freighterApi) {
-        console.log('Using window.freighterApi');
-        const publicKey = await window.freighterApi.getPublicKey();
-        if (publicKey) {
-          setStellarAddress(publicKey);
-          setShowWalletMenu(false);
-        }
-      } else if ((window as any).freighter) {
-        console.log('Using window.freighter');
-        const publicKey = await (window as any).freighter.getPublicKey();
-        if (publicKey) {
-          setStellarAddress(publicKey);
-          setShowWalletMenu(false);
-        }
-      } else if ((window as any).stellar) {
-        console.log('Using window.stellar');
-        const publicKey = await (window as any).stellar.getPublicKey();
-        if (publicKey) {
-          setStellarAddress(publicKey);
-          setShowWalletMenu(false);
-        }
-      } else {
-        // Son çare: tüm window objelerini listele
-        console.log('Freighter API bulunamadı. Mevcut window objeleri:');
-        console.log(Object.keys(window).filter(key => 
-          key.toLowerCase().includes('stellar') || 
-          key.toLowerCase().includes('freighter') ||
-          key.toLowerCase().includes('wallet')
-        ));
-        throw new Error('Freighter wallet bulunamadı! Lütfen Freighter extension\'ı yükleyin ve aktif edin.');
-      }
+      await connectFreighter();
+      setShowWalletMenu(false);
     } catch (error: any) {
-      console.error('Freighter connection error:', error);
       setConnectionError(`Freighter: ${error.message}`);
-    } finally {
-      setIsConnecting(false);
     }
   };
 
   // Wallet disconnect
   const disconnectWallets = () => {
     setEthAddress('');
-    setStellarAddress('');
+    disconnectFreighter();
     setShowWalletMenu(false);
   };
 
-  const isWalletsConnected = ethAddress && stellarAddress;
-  const hasAnyConnection = ethAddress || stellarAddress;
+  const isWalletsConnected = ethAddress && stellarConnected;
+  const hasAnyConnection = ethAddress || stellarConnected;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900 text-white">
@@ -165,13 +124,13 @@ function App() {
               <div className="absolute top-full right-0 mt-2 w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-[100] p-4">
                 <h3 className="text-white font-semibold mb-4 text-center">Connect Wallets</h3>
                 
-                {connectionError && (
+                {(connectionError || stellarError) && (
                   <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
-                    <p className="text-red-300 text-sm">{connectionError}</p>
+                    <p className="text-red-300 text-sm">{connectionError || stellarError}</p>
                   </div>
                 )}
 
-                                {/* MetaMask */}
+                {/* MetaMask */}
                 <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -210,7 +169,7 @@ function App() {
                   </div>
                 </div>
 
-                                {/* Freighter */}
+                {/* Freighter */}
                 <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -221,7 +180,7 @@ function App() {
                       </div>
                     </div>
                     
-                    {stellarAddress ? (
+                    {stellarConnected && stellarAddress ? (
                       <div className="text-right">
                         <div className="flex items-center gap-1 mb-1">
                           <div className="w-2 h-2 bg-green-400 rounded-full"></div>
@@ -238,12 +197,13 @@ function App() {
                           e.preventDefault();
                           e.stopPropagation();
                           console.log('Freighter button mousedown');
-                          connectFreighter();
+                          handleFreighterConnect();
                         }}
                         className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
                         style={{ pointerEvents: 'auto' }}
+                        disabled={stellarLoading}
                       >
-                        {isConnecting ? 'Connecting...' : 'Connect'}
+                        {stellarLoading ? 'Connecting...' : 'Connect'}
                       </button>
                     )}
                   </div>
@@ -280,11 +240,14 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div className="flex items-start justify-center px-6 pb-12">
+      <div className="flex flex-col items-center justify-center px-6 pb-12 gap-8">
         <BridgeForm 
-          ethAddress={ethAddress}
-          stellarAddress={stellarAddress}
+          ethAddress={ethAddress} 
+          stellarAddress={stellarAddress || ''}
         />
+        
+        {/* Test Component */}
+        <FreighterTest />
       </div>
 
       {/* Background Effects */}
@@ -296,7 +259,7 @@ function App() {
       {/* Dropdown kapatma için overlay */}
 
     </div>
-  )
+  );
 }
 
-export default App 
+export default App; 
