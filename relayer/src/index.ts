@@ -11,8 +11,10 @@ import cors from 'cors';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 import { ethereumListener } from './ethereum-listener.js';
-import { quoterService } from './quoter.js';
+import { quoterService } from './quoter-service.js';
 import { ordersService } from './orders.js';
+import { gasPriceTracker } from './gas-tracker.js';
+import { presetManager } from './preset-manager.js';
 import { validateQuoteRequest, createErrorResponse, createSuccessResponse, getErrorMessage } from './utils.js';
 import { QuoteRequest, SignedOrderInput, SecretInput } from './types.js';
 
@@ -131,6 +133,14 @@ async function initializeRelayer() {
     console.warn('🔧 Maintenance mode is active');
   }
   
+  // Start gas price tracking
+  try {
+    gasPriceTracker.startMonitoring(30000); // Monitor every 30 seconds
+    console.log('⛽ Gas price tracking started');
+  } catch (error) {
+    console.error('❌ Failed to start gas price tracking:', error);
+  }
+
   // Start Ethereum event listener
   try {
     await ethereumListener.startListening();
@@ -193,7 +203,19 @@ app.get('/quote/receive', async (req, res) => {
       return res.status(400).json(createErrorResponse(validation.error!));
     }
 
-    const quote = await quoterService.calculateQuote(params);
+    // Map legacy QuoteRequest to new format
+    const mappedParams = {
+      fromToken: params.srcTokenAddress,
+      toToken: params.dstTokenAddress,
+      fromChain: params.srcChain?.toString() || 'ethereum',
+      toChain: params.dstChain?.toString() || 'stellar',
+      amount: params.amount,
+      slippage: params.fee || 0.5,
+      userAddress: params.walletAddress,
+      preset: 'medium' as const
+    };
+
+    const quote = await quoterService.getQuote(mappedParams);
     res.json(quote);
 
     console.log('💰 Quote generated:', quote.quoteId);
@@ -213,7 +235,19 @@ app.post('/quote/receive', async (req, res) => {
       return res.status(400).json(createErrorResponse(validation.error!));
     }
 
-    const quote = await quoterService.calculateQuote(params);
+    // Map legacy QuoteRequest to new format
+    const mappedParams = {
+      fromToken: params.srcTokenAddress,
+      toToken: params.dstTokenAddress,
+      fromChain: params.srcChain?.toString() || 'ethereum',
+      toChain: params.dstChain?.toString() || 'stellar',
+      amount: params.amount,
+      slippage: params.fee || 0.5,
+      userAddress: params.walletAddress,
+      preset: 'medium' as const
+    };
+
+    const quote = await quoterService.getQuote(mappedParams);
     res.json(quote);
 
     console.log('💰 Custom quote generated:', quote.quoteId);
@@ -226,19 +260,181 @@ app.post('/quote/receive', async (req, res) => {
 // POST /quote/build - Build order
 app.post('/quote/build', async (req, res) => {
   try {
-    const { quote, preset = 'fast' } = req.body;
+    const { quoteId, preset = 'fast' } = req.body;
     
-    if (!quote) {
-      return res.status(400).json(createErrorResponse('Quote is required'));
+    if (!quoteId) {
+      return res.status(400).json(createErrorResponse('Quote ID is required'));
     }
 
-    const orderData = await quoterService.buildOrder(quote, preset);
+    const quote = quoterService.getQuoteById(quoteId);
+    if (!quote) {
+      return res.status(404).json(createErrorResponse('Quote not found'));
+    }
+
+    const orderData = {
+      quoteId: quote.quoteId,
+      order: quote,
+      preset,
+      timestamp: Date.now()
+    };
+    
     res.json(orderData);
 
     console.log('🔨 Order built for quote:', quote.quoteId);
   } catch (error) {
     console.error('❌ Order building failed:', error);
     res.status(500).json(createErrorResponse('Order building failed', getErrorMessage(error)));
+  }
+});
+
+// ===== GAS TRACKING API ENDPOINTS =====
+
+// GET /gas/current - Get current gas prices
+app.get('/gas/current', async (req, res) => {
+  try {
+    const gasPrice = gasPriceTracker.getCurrentGasPrice();
+    res.json(createSuccessResponse(gasPrice));
+  } catch (error) {
+    console.error('❌ Gas price fetch failed:', error);
+    res.status(500).json(createErrorResponse('Gas price fetch failed', getErrorMessage(error)));
+  }
+});
+
+// GET /gas/history - Get gas price history
+app.get('/gas/history', async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const history = gasPriceTracker.getGasPriceHistory(limit);
+    res.json(createSuccessResponse(history));
+  } catch (error) {
+    console.error('❌ Gas history fetch failed:', error);
+    res.status(500).json(createErrorResponse('Gas history fetch failed', getErrorMessage(error)));
+  }
+});
+
+// GET /gas/congestion - Get network congestion
+app.get('/gas/congestion', async (req, res) => {
+  try {
+    const congestion = gasPriceTracker.getNetworkCongestion();
+    res.json(createSuccessResponse(congestion));
+  } catch (error) {
+    console.error('❌ Congestion fetch failed:', error);
+    res.status(500).json(createErrorResponse('Congestion fetch failed', getErrorMessage(error)));
+  }
+});
+
+// GET /gas/recommendation - Get gas price recommendation
+app.get('/gas/recommendation', async (req, res) => {
+  try {
+    const auctionDuration = req.query.duration ? parseInt(req.query.duration as string) : 180;
+    const recommendation = gasPriceTracker.getAuctionGasRecommendation(auctionDuration);
+    res.json(createSuccessResponse(recommendation));
+  } catch (error) {
+    console.error('❌ Gas recommendation failed:', error);
+    res.status(500).json(createErrorResponse('Gas recommendation failed', getErrorMessage(error)));
+  }
+});
+
+// ===== PRESET MANAGEMENT API ENDPOINTS =====
+
+// GET /presets - Get all presets
+app.get('/presets', async (req, res) => {
+  try {
+    const presets = presetManager.getAllPresets();
+    res.json(createSuccessResponse(presets));
+  } catch (error) {
+    console.error('❌ Presets fetch failed:', error);
+    res.status(500).json(createErrorResponse('Presets fetch failed', getErrorMessage(error)));
+  }
+});
+
+// GET /presets/:id - Get preset by ID
+app.get('/presets/:id', async (req, res) => {
+  try {
+    const preset = presetManager.getPreset(req.params.id);
+    if (!preset) {
+      return res.status(404).json(createErrorResponse('Preset not found'));
+    }
+    res.json(createSuccessResponse(preset));
+  } catch (error) {
+    console.error('❌ Preset fetch failed:', error);
+    res.status(500).json(createErrorResponse('Preset fetch failed', getErrorMessage(error)));
+  }
+});
+
+// POST /presets - Create new preset
+app.post('/presets', async (req, res) => {
+  try {
+    const preset = presetManager.createPreset(req.body);
+    res.status(201).json(createSuccessResponse(preset));
+  } catch (error) {
+    console.error('❌ Preset creation failed:', error);
+    res.status(500).json(createErrorResponse('Preset creation failed', getErrorMessage(error)));
+  }
+});
+
+// PUT /presets/:id - Update preset
+app.put('/presets/:id', async (req, res) => {
+  try {
+    const preset = presetManager.updatePreset(req.params.id, req.body);
+    if (!preset) {
+      return res.status(404).json(createErrorResponse('Preset not found'));
+    }
+    res.json(createSuccessResponse(preset));
+  } catch (error) {
+    console.error('❌ Preset update failed:', error);
+    res.status(500).json(createErrorResponse('Preset update failed', getErrorMessage(error)));
+  }
+});
+
+// DELETE /presets/:id - Delete preset
+app.delete('/presets/:id', async (req, res) => {
+  try {
+    const deleted = presetManager.deletePreset(req.params.id);
+    if (!deleted) {
+      return res.status(404).json(createErrorResponse('Preset not found'));
+    }
+    res.json(createSuccessResponse({ deleted: true }));
+  } catch (error) {
+    console.error('❌ Preset deletion failed:', error);
+    res.status(500).json(createErrorResponse('Preset deletion failed', getErrorMessage(error)));
+  }
+});
+
+// POST /presets/recommend - Get recommended preset
+app.post('/presets/recommend', async (req, res) => {
+  try {
+    const { amount, fromChain, toChain, urgency = 'medium' } = req.body;
+    const preset = presetManager.getRecommendedPreset(amount, fromChain, toChain, urgency);
+    res.json(createSuccessResponse(preset));
+  } catch (error) {
+    console.error('❌ Preset recommendation failed:', error);
+    res.status(500).json(createErrorResponse('Preset recommendation failed', getErrorMessage(error)));
+  }
+});
+
+// GET /presets/stats/:id - Get preset statistics
+app.get('/presets/stats/:id', async (req, res) => {
+  try {
+    const stats = presetManager.getPresetStats(req.params.id);
+    if (!stats) {
+      return res.status(404).json(createErrorResponse('Preset not found'));
+    }
+    res.json(createSuccessResponse(stats));
+  } catch (error) {
+    console.error('❌ Preset stats fetch failed:', error);
+    res.status(500).json(createErrorResponse('Preset stats fetch failed', getErrorMessage(error)));
+  }
+});
+
+// POST /presets/optimize - Optimize all presets
+app.post('/presets/optimize', async (req, res) => {
+  try {
+    presetManager.optimizePresets();
+    res.json(createSuccessResponse({ optimized: true }));
+  } catch (error) {
+    console.error('❌ Preset optimization failed:', error);
+    res.status(500).json(createErrorResponse('Preset optimization failed', getErrorMessage(error)));
   }
 });
 
