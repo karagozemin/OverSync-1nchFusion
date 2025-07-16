@@ -4,8 +4,8 @@
  */
 
 // Main exports
-export { default as StellarClient, default } from './stellar-client';
-export { StellarHTLCManager } from './claimable-balance';
+export { default as StellarClient, default } from './stellar-client.js';
+export { StellarHTLCManager } from './claimable-balance.js';
 
 // Types and interfaces
 export type {
@@ -19,7 +19,7 @@ export type {
 export type {
   CrossChainOrder,
   StellarBridgeResult,
-} from './stellar-client';
+} from './stellar-client.js';
 
 // Utility functions
 export {
@@ -27,7 +27,7 @@ export {
   createMainnetConfig,
   generatePreimageAndHash,
   verifyPreimage,
-} from './claimable-balance';
+} from './claimable-balance.js';
 
 // Configuration constants
 export const STELLAR_CONFIG = {

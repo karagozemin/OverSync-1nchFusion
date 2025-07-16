@@ -1,4 +1,3 @@
-import React from 'react';
 import { useFreighter } from '../hooks/useFreighter';
 
 export default function FreighterTest() {

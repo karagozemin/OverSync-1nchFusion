@@ -15,7 +15,7 @@ import {
   TimeoutInfinite,
   Memo,
 } from '@stellar/stellar-sdk';
-import { Server } from '@stellar/stellar-sdk/lib/horizon';
+import { Server } from '@stellar/stellar-sdk/lib/horizon/index.js';
 
 /**
  * Configuration for Stellar network

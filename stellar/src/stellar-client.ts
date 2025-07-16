@@ -14,7 +14,7 @@ import {
   createMainnetConfig,
   generatePreimageAndHash,
   verifyPreimage,
-} from './claimable-balance';
+} from './claimable-balance.js';
 
 /**
  * Cross-chain order data from Ethereum
