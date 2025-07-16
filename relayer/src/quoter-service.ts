@@ -103,7 +103,9 @@ export class QuoterService {
     const { toAmount, minimumReceived } = this.calculateAmountWithSlippage(
       request.amount,
       baseRate,
-      request.slippage
+      request.slippage,
+      fromTokenPrice.decimals,
+      toTokenPrice.decimals
     );
 
     // Get gas price recommendation
@@ -139,7 +141,7 @@ export class QuoterService {
       fromAmount: request.amount,
       toAmount: toAmount,
       minimumReceived: minimumReceived,
-      priceImpact: this.calculatePriceImpact(request.amount, toAmount, baseRate),
+      priceImpact: this.calculatePriceImpact(request.amount, toAmount, baseRate, fromTokenPrice.decimals, toTokenPrice.decimals),
       estimatedGas: estimatedGas,
       gasPrice: gasPrice,
       executionTime: auctionConfig.auctionDuration,
@@ -289,7 +291,13 @@ export class QuoterService {
   private calculateBaseRate(fromToken: TokenPrice, toToken: TokenPrice): string {
     const fromPriceBigInt = BigInt(fromToken.price);
     const toPriceBigInt = BigInt(toToken.price);
-    const rate = (fromPriceBigInt * BigInt(10 ** toToken.decimals)) / toPriceBigInt;
+    
+    // Normalize prices to same decimal base (18 decimals)
+    const fromPriceNormalized = fromPriceBigInt * BigInt(10 ** (18 - fromToken.decimals));
+    const toPriceNormalized = toPriceBigInt * BigInt(10 ** (18 - toToken.decimals));
+    
+    // Calculate rate with proper decimal handling
+    const rate = (fromPriceNormalized * BigInt(10 ** Math.max(fromToken.decimals, toToken.decimals))) / toPriceNormalized;
     return rate.toString();
   }
 
@@ -299,12 +307,16 @@ export class QuoterService {
   private calculateAmountWithSlippage(
     amount: string,
     rate: string,
-    slippage: number
+    slippage: number,
+    fromDecimals: number = 18,
+    toDecimals: number = 18
   ): { toAmount: string; minimumReceived: string } {
     const amountBigInt = BigInt(amount);
     const rateBigInt = BigInt(rate);
     
-    const baseToAmount = (amountBigInt * rateBigInt) / BigInt(10 ** 18);
+    // Use appropriate decimals for calculation
+    const decimalAdjustment = Math.max(fromDecimals, toDecimals);
+    const baseToAmount = (amountBigInt * rateBigInt) / BigInt(10 ** decimalAdjustment);
     const slippageBps = Math.floor(slippage * 100);
     const minimumReceived = (baseToAmount * BigInt(10000 - slippageBps)) / BigInt(10000);
     
@@ -391,12 +403,26 @@ export class QuoterService {
   /**
    * Calculate price impact
    */
-  private calculatePriceImpact(inputAmount: string, outputAmount: string, rate: string): string {
+  private calculatePriceImpact(
+    inputAmount: string, 
+    outputAmount: string, 
+    rate: string, 
+    fromDecimals: number = 18,
+    toDecimals: number = 18
+  ): string {
     const inputBigInt = BigInt(inputAmount);
     const outputBigInt = BigInt(outputAmount);
     const rateBigInt = BigInt(rate);
     
-    const expectedOutput = (inputBigInt * rateBigInt) / BigInt(10 ** 18);
+    // Use appropriate decimals for calculation
+    const decimalAdjustment = Math.max(fromDecimals, toDecimals);
+    const expectedOutput = (inputBigInt * rateBigInt) / BigInt(10 ** decimalAdjustment);
+    
+    // Handle zero division case
+    if (expectedOutput === BigInt(0)) {
+      return "0";
+    }
+    
     const impact = ((expectedOutput - outputBigInt) * BigInt(10000)) / expectedOutput;
     
     return (Number(impact) / 100).toString();

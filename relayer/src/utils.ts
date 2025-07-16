@@ -65,9 +65,9 @@ export function validateQuoteRequest(params: QuoteRequest): { valid: boolean; er
   }
 
   // Validate addresses
-  if (!isValidAddress(params.srcTokenAddress) || 
-      !isValidAddress(params.dstTokenAddress) || 
-      !isValidAddress(params.walletAddress)) {
+  if (!isValidTokenAddress(params.srcTokenAddress) || 
+      !isValidTokenAddress(params.dstTokenAddress) || 
+      !isValidWalletAddress(params.walletAddress)) {
     return { valid: false, error: 'Invalid address format' };
   }
 
@@ -75,9 +75,36 @@ export function validateQuoteRequest(params: QuoteRequest): { valid: boolean; er
 }
 
 /**
- * Validate Ethereum/Stellar address format
+ * Validate token address format (can be symbol or address)
  */
-export function isValidAddress(address: string): boolean {
+export function isValidTokenAddress(address: string): boolean {
+  if (!address || typeof address !== 'string') return false;
+  
+  // Common token symbols
+  const tokenSymbols = ['ETH', 'USDC', 'USDT', 'DAI', 'WETH', 'BTC', 'XLM', 'MATIC', 'BNB'];
+  if (tokenSymbols.includes(address.toUpperCase())) {
+    return true;
+  }
+  
+  // Ethereum contract address
+  if (address.startsWith('0x') && address.length === 42) {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+  
+  // Stellar asset code (max 12 chars)
+  if (address.length <= 12 && /^[A-Za-z0-9]+$/.test(address)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Validate wallet address format
+ */
+export function isValidWalletAddress(address: string): boolean {
+  if (!address || typeof address !== 'string') return false;
+  
   // Ethereum address validation (0x + 40 hex chars)
   if (address.startsWith('0x') && address.length === 42) {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
@@ -88,7 +115,19 @@ export function isValidAddress(address: string): boolean {
     return /^G[A-Z2-7]{55}$/.test(address);
   }
   
+  // More flexible Stellar address validation
+  if (address.length === 56 && /^[A-Z2-7]+$/.test(address)) {
+    return true;
+  }
+  
   return false;
+}
+
+/**
+ * Validate Ethereum/Stellar address format (legacy)
+ */
+export function isValidAddress(address: string): boolean {
+  return isValidWalletAddress(address);
 }
 
 /**
