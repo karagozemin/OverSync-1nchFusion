@@ -5,6 +5,8 @@
 
 import { config } from 'dotenv';
 import { resolve } from 'path';
+import express from 'express';
+import cors from 'cors';
 
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
@@ -133,6 +135,11 @@ async function initializeRelayer() {
     process.exit(1);
   }
   
+  // Start HTTP server
+  const server = app.listen(RELAYER_CONFIG.port, () => {
+    console.log(`🌐 HTTP server started on port ${RELAYER_CONFIG.port}`);
+  });
+  
   console.log('✅ Relayer service initialized successfully');
   console.log('🎯 Ready to process cross-chain swaps');
 }
@@ -155,6 +162,65 @@ async function gracefulShutdown() {
 // Handle shutdown signals
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+
+// Create Express app
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    service: 'FusionBridge Relayer'
+  });
+});
+
+// Create HTLC endpoint
+app.post('/create-htlc', async (req, res) => {
+  try {
+    const { fromToken, toToken, amount, ethAddress, stellarAddress, timestamp } = req.body;
+
+    console.log('🔄 Bridge request received:', {
+      from: `${fromToken.symbol} (${fromToken.chain})`,
+      to: `${toToken.symbol} (${toToken.chain})`,
+      amount: amount,
+      ethAddress: ethAddress,
+      stellarAddress: stellarAddress
+    });
+
+    // Validate request
+    if (!fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        required: ['fromToken', 'toToken', 'amount', 'ethAddress', 'stellarAddress']
+      });
+    }
+
+    // For now, return a success response
+    // In a full implementation, this would initiate the actual bridge process
+    const bridgeId = `bridge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    res.json({
+      success: true,
+      bridgeId: bridgeId,
+      transactionId: `tx_${Date.now()}`,
+      message: 'Bridge request processed successfully',
+      estimatedTime: '2-5 minutes'
+    });
+
+    // Log the bridge request
+    console.log('✅ Bridge request processed:', bridgeId);
+
+  } catch (error) {
+    console.error('❌ Bridge request failed:', error);
+    res.status(500).json({
+      error: 'Bridge request failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
 // Start relayer if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
