@@ -18,14 +18,10 @@ interface Token {
 
 const TOKENS: Record<string, Token[]> = {
   ethereum: [
-    { symbol: 'ETH', name: 'Ether', icon: '🔷', chain: 'Ethereum', chainIcon: '🔷', price: 2994.54 },
-    { symbol: 'USDC', name: 'USD Coin', icon: '🔵', chain: 'Ethereum', chainIcon: '🔷', price: 1.00 },
-    { symbol: 'USDT', name: 'Tether', icon: '🟢', chain: 'Ethereum', chainIcon: '🔷', price: 0.999 }
+    { symbol: 'ETH', name: 'Ether', icon: '🔷', chain: 'Ethereum', chainIcon: '🔷', price: 2994.54 }
   ],
   stellar: [
-    { symbol: 'XLM', name: 'Stellar Lumens', icon: '⭐', chain: 'Stellar', chainIcon: '⭐', price: 0.399 },
-    { symbol: 'USDC', name: 'USD Coin', icon: '🔵', chain: 'Stellar', chainIcon: '⭐', price: 1.00 },
-    { symbol: 'yXLM', name: 'yXLM', icon: '💎', chain: 'Stellar', chainIcon: '⭐', price: 0.385 }
+    { symbol: 'XLM', name: 'Stellar Lumens', icon: '⭐', chain: 'Stellar', chainIcon: '⭐', price: 0.399 }
   ]
 };
 
