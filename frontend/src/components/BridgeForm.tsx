@@ -30,8 +30,6 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [toToken, setToToken] = useState<Token>(TOKENS.stellar[0]);
   const [fromAmount, setFromAmount] = useState<string>('1');
   const [amountError, setAmountError] = useState<string>('');
-  const [showFromTokens, setShowFromTokens] = useState(false);
-  const [showToTokens, setShowToTokens] = useState(false);
   
   // Bridge transaction states
   const [isBridging, setIsBridging] = useState(false);
@@ -147,22 +145,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     setToToken(tempToken);
   };
 
-  // Token seçimi
-  const handleFromTokenSelect = (token: Token) => {
-    setFromToken(token);
-    setShowFromTokens(false);
-  };
-
-  const handleToTokenSelect = (token: Token) => {
-    setToToken(token);
-    setShowToTokens(false);
-  };
-
-  // Kullanılabilir tokenları filtreleme
-  const getAvailableTokens = (currentToken: Token) => {
-    const allTokens = [...TOKENS.ethereum, ...TOKENS.stellar];
-    return allTokens.filter(token => token.symbol !== currentToken.symbol);
-  };
+  // Token seçimi kaldırıldı - sadece ETH ve XLM swap
 
   // Bridge işlemi
   const handleBridge = async () => {
@@ -312,42 +295,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           <label className="block text-gray-300 text-sm font-medium mb-3">You send</label>
           <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-200 shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              <div className="relative">
-                <button 
-                  onClick={() => setShowFromTokens(!showFromTokens)}
-                  className="flex items-center gap-3 bg-white/10 hover:bg-white/15 rounded-xl px-4 py-3 transition-all duration-200 group border border-white/10 hover:border-white/20"
-                >
-                  <span className="text-2xl">{fromToken.icon}</span>
-                  <div className="text-left">
-                    <div className="font-bold text-white text-lg group-hover:text-blue-300 transition-colors">
-                      {fromToken.symbol}
-                    </div>
-                    <div className="text-xs text-gray-400">on {fromToken.chain}</div>
+              <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3 border border-white/10">
+                <span className="text-2xl">{fromToken.icon}</span>
+                <div className="text-left">
+                  <div className="font-bold text-white text-lg">
+                    {fromToken.symbol}
                   </div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400 group-hover:text-white transition-colors">
-                    <path d="M7 10l5 5 5-5z"/>
-                  </svg>
-                </button>
-
-                {/* Token Dropdown */}
-                {showFromTokens && (
-                  <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-50 max-h-60 overflow-y-auto">
-                    {getAvailableTokens(fromToken).map((token) => (
-                      <button
-                        key={`${token.symbol}-${token.chain}`}
-                        onClick={() => handleFromTokenSelect(token)}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors text-left border-b border-white/10 last:border-b-0"
-                      >
-                        <span className="text-xl">{token.icon}</span>
-                        <div className="flex-1">
-                          <div className="font-medium text-white">{token.symbol}</div>
-                          <div className="text-xs text-gray-400">{token.name} on {token.chain}</div>
-                        </div>
-                        <div className="text-sm text-gray-300">${token.price?.toFixed(2)}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <div className="text-xs text-gray-400">on {fromToken.chain}</div>
+                </div>
               </div>
               
               <div className="text-right">
@@ -416,42 +371,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           <label className="block text-gray-300 text-sm font-medium mb-3">You receive</label>
           <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-200 shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              <div className="relative">
-                <button 
-                  onClick={() => setShowToTokens(!showToTokens)}
-                  className="flex items-center gap-3 bg-white/10 hover:bg-white/15 rounded-xl px-4 py-3 transition-all duration-200 group border border-white/10 hover:border-white/20"
-                >
-                  <span className="text-2xl">{toToken.icon}</span>
-                  <div className="text-left">
-                    <div className="font-bold text-white text-lg group-hover:text-purple-300 transition-colors">
-                      {toToken.symbol}
-                    </div>
-                    <div className="text-xs text-gray-400">on {toToken.chain}</div>
+              <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3 border border-white/10">
+                <span className="text-2xl">{toToken.icon}</span>
+                <div className="text-left">
+                  <div className="font-bold text-white text-lg">
+                    {toToken.symbol}
                   </div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400 group-hover:text-white transition-colors">
-                    <path d="M7 10l5 5 5-5z"/>
-                  </svg>
-                </button>
-
-                {/* Token Dropdown */}
-                {showToTokens && (
-                  <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-50 max-h-60 overflow-y-auto">
-                    {getAvailableTokens(toToken).map((token) => (
-                      <button
-                        key={`${token.symbol}-${token.chain}`}
-                        onClick={() => handleToTokenSelect(token)}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 transition-colors text-left border-b border-white/10 last:border-b-0"
-                      >
-                        <span className="text-xl">{token.icon}</span>
-                        <div className="flex-1">
-                          <div className="font-medium text-white">{token.symbol}</div>
-                          <div className="text-xs text-gray-400">{token.name} on {token.chain}</div>
-                        </div>
-                        <div className="text-sm text-gray-300">${token.price?.toFixed(2)}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <div className="text-xs text-gray-400">on {toToken.chain}</div>
+                </div>
               </div>
               
               <div className="text-right">
@@ -532,16 +459,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         </div>
       </div>
 
-      {/* Dropdown kapatma için overlay */}
-      {(showFromTokens || showToTokens) && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => {
-            setShowFromTokens(false);
-            setShowToTokens(false);
-          }}
-        />
-      )}
+      {/* Dropdown overlay kaldırıldı */}
     </div>
   );
 } 
