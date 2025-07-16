@@ -11,6 +11,10 @@ import cors from 'cors';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 import { ethereumListener } from './ethereum-listener.js';
+import { quoterService } from './quoter.js';
+import { ordersService } from './orders.js';
+import { validateQuoteRequest, createErrorResponse, createSuccessResponse, getErrorMessage } from './utils.js';
+import { QuoteRequest, SignedOrderInput, SecretInput } from './types.js';
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
@@ -177,12 +181,278 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Create HTLC endpoint
+// ===== QUOTER API ENDPOINTS =====
+
+// GET /quote/receive - Basic quote
+app.get('/quote/receive', async (req, res) => {
+  try {
+    const params = req.query as any;
+    const validation = validateQuoteRequest(params);
+    
+    if (!validation.valid) {
+      return res.status(400).json(createErrorResponse(validation.error!));
+    }
+
+    const quote = await quoterService.calculateQuote(params);
+    res.json(quote);
+
+    console.log('💰 Quote generated:', quote.quoteId);
+  } catch (error) {
+    console.error('❌ Quote generation failed:', error);
+    res.status(500).json(createErrorResponse('Quote generation failed', error instanceof Error ? error.message : 'Unknown error'));
+  }
+});
+
+// POST /quote/receive - Custom preset quote
+app.post('/quote/receive', async (req, res) => {
+  try {
+    const params = req.body as QuoteRequest;
+    const validation = validateQuoteRequest(params);
+    
+    if (!validation.valid) {
+      return res.status(400).json(createErrorResponse(validation.error!));
+    }
+
+    const quote = await quoterService.calculateQuote(params);
+    res.json(quote);
+
+    console.log('💰 Custom quote generated:', quote.quoteId);
+  } catch (error) {
+    console.error('❌ Custom quote generation failed:', error);
+    res.status(500).json(createErrorResponse('Quote generation failed', error instanceof Error ? error.message : 'Unknown error'));
+  }
+});
+
+// POST /quote/build - Build order
+app.post('/quote/build', async (req, res) => {
+  try {
+    const { quote, preset = 'fast' } = req.body;
+    
+    if (!quote) {
+      return res.status(400).json(createErrorResponse('Quote is required'));
+    }
+
+    const orderData = await quoterService.buildOrder(quote, preset);
+    res.json(orderData);
+
+    console.log('🔨 Order built for quote:', quote.quoteId);
+  } catch (error) {
+    console.error('❌ Order building failed:', error);
+    res.status(500).json(createErrorResponse('Order building failed', getErrorMessage(error)));
+  }
+});
+
+// ===== ORDERS API ENDPOINTS =====
+
+// GET /order/active - Get active orders
+app.get('/order/active', async (req, res) => {
+  try {
+    const { page, limit, srcChain, dstChain } = req.query as any;
+    
+    const result = ordersService.getActiveOrders(
+      page ? parseInt(page) : undefined,
+      limit ? parseInt(limit) : undefined,
+      srcChain ? parseInt(srcChain) : undefined,
+      dstChain ? parseInt(dstChain) : undefined
+    );
+    
+    res.json(result);
+    console.log(`📋 Active orders retrieved: ${result.items.length} items`);
+  } catch (error) {
+    console.error('❌ Failed to get active orders:', error);
+    res.status(500).json(createErrorResponse('Failed to get active orders', getErrorMessage(error)));
+  }
+});
+
+// GET /order/escrow - Get escrow factory
+app.get('/order/escrow', async (req, res) => {
+  try {
+    const { chainId } = req.query as any;
+    
+    if (!chainId) {
+      return res.status(400).json(createErrorResponse('chainId is required'));
+    }
+
+    const result = ordersService.getEscrowFactory(parseInt(chainId));
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Failed to get escrow factory:', error);
+    res.status(500).json(createErrorResponse('Failed to get escrow factory', getErrorMessage(error)));
+  }
+});
+
+// GET /order/maker/:address - Get orders by maker
+app.get('/order/maker/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { page, limit } = req.query as any;
+    
+    const result = ordersService.getOrdersByMaker(
+      address,
+      page ? parseInt(page) : undefined,
+      limit ? parseInt(limit) : undefined
+    );
+    
+    res.json(result);
+    console.log(`📋 Orders by maker ${address}: ${result.items.length} items`);
+  } catch (error) {
+    console.error('❌ Failed to get orders by maker:', error);
+    res.status(500).json(createErrorResponse('Failed to get orders by maker', getErrorMessage(error)));
+  }
+});
+
+// GET /order/secrets/:orderHash - Get order secrets
+app.get('/order/secrets/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getOrderSecrets(orderHash);
+    
+    if (!result) {
+      return res.status(404).json(createErrorResponse('Order not found'));
+    }
+    
+    res.json(result);
+    console.log(`🔐 Secrets retrieved for order: ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get order secrets:', error);
+    res.status(500).json(createErrorResponse('Failed to get order secrets', error.message));
+  }
+});
+
+// GET /order/status/:orderHash - Get order status
+app.get('/order/status/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getOrderStatus(orderHash);
+    res.json(result);
+    
+    console.log(`📊 Status retrieved for order: ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get order status:', error);
+    res.status(500).json(createErrorResponse('Failed to get order status', error.message));
+  }
+});
+
+// POST /order/status - Get multiple order statuses
+app.post('/order/status', async (req, res) => {
+  try {
+    const { orderHashes } = req.body;
+    
+    if (!Array.isArray(orderHashes)) {
+      return res.status(400).json(createErrorResponse('orderHashes must be an array'));
+    }
+    
+    const result = ordersService.getOrderStatuses(orderHashes);
+    res.json(result);
+    
+    console.log(`📊 Multiple statuses retrieved for ${orderHashes.length} orders`);
+  } catch (error) {
+    console.error('❌ Failed to get order statuses:', error);
+    res.status(500).json(createErrorResponse('Failed to get order statuses', error.message));
+  }
+});
+
+// ===== RELAYER API ENDPOINTS =====
+
+// POST /submit - Submit single order (renamed from /create-htlc)
+app.post('/submit', async (req, res) => {
+  try {
+    const signedOrder = req.body as SignedOrderInput;
+    
+    // Validate required fields
+    if (!signedOrder.order || !signedOrder.signature || !signedOrder.srcChainId) {
+      return res.status(400).json(createErrorResponse('Missing required fields', 'order, signature, and srcChainId are required'));
+    }
+
+    // Add order to orders service
+    const orderHash = ordersService.addOrder(signedOrder);
+    
+    res.json(createSuccessResponse({
+      orderHash,
+      message: 'Order submitted successfully'
+    }));
+
+    console.log('✅ Order submitted:', orderHash);
+  } catch (error) {
+    console.error('❌ Order submission failed:', error);
+    res.status(500).json(createErrorResponse('Order submission failed', error.message));
+  }
+});
+
+// POST /submit/many - Submit multiple orders
+app.post('/submit/many', async (req, res) => {
+  try {
+    const { orders } = req.body;
+    
+    if (!Array.isArray(orders)) {
+      return res.status(400).json(createErrorResponse('orders must be an array'));
+    }
+
+    const results = orders.map(order => {
+      try {
+        const orderHash = ordersService.addOrder(order);
+        return { success: true, orderHash };
+      } catch (error) {
+        return { success: false, error: getErrorMessage(error) };
+      }
+    });
+
+    res.json({ results });
+    console.log(`✅ Multiple orders submitted: ${results.filter(r => r.success).length}/${results.length} successful`);
+  } catch (error) {
+    console.error('❌ Multiple order submission failed:', error);
+    res.status(500).json(createErrorResponse('Multiple order submission failed', error.message));
+  }
+});
+
+// POST /submit/secret - Submit secret
+app.post('/submit/secret', async (req, res) => {
+  try {
+    const secretInput = req.body as SecretInput;
+    
+    if (!secretInput.secret || !secretInput.orderHash) {
+      return res.status(400).json(createErrorResponse('secret and orderHash are required'));
+    }
+
+    const result = ordersService.submitSecret(secretInput);
+    
+    res.json(createSuccessResponse({
+      submitted: result,
+      message: 'Secret submitted successfully'
+    }));
+
+    console.log('🔐 Secret submitted for order:', secretInput.orderHash);
+  } catch (error) {
+    console.error('❌ Secret submission failed:', error);
+    res.status(500).json(createErrorResponse('Secret submission failed', error.message));
+  }
+});
+
+// GET /ready-to-accept-secret-fills - Get ready orders
+app.get('/ready-to-accept-secret-fills', async (req, res) => {
+  try {
+    const { orderHash } = req.query as any;
+    
+    const result = ordersService.getReadyToAcceptSecretFills(orderHash);
+    res.json(result);
+    
+    console.log('📋 Ready to accept secret fills retrieved');
+  } catch (error) {
+    console.error('❌ Failed to get ready orders:', error);
+    res.status(500).json(createErrorResponse('Failed to get ready orders', error.message));
+  }
+});
+
+// ===== LEGACY ENDPOINT (for backward compatibility) =====
+
+// POST /create-htlc - Legacy endpoint (redirects to /submit)
 app.post('/create-htlc', async (req, res) => {
   try {
     const { fromToken, toToken, amount, ethAddress, stellarAddress, timestamp } = req.body;
 
-    console.log('🔄 Bridge request received:', {
+    console.log('🔄 Legacy bridge request received:', {
       from: `${fromToken.symbol} (${fromToken.chain})`,
       to: `${toToken.symbol} (${toToken.chain})`,
       amount: amount,

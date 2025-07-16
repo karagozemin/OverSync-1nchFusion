@@ -12,6 +12,7 @@
   ],
   "packageManager": "pnpm@8.15.0",
   "scripts": {
+    "start": "pnpm --filter relayer start",
     "dev": "pnpm -r dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
