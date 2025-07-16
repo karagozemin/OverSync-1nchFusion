@@ -33,6 +33,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [fromToken, setFromToken] = useState<Token>(TOKENS.ethereum[0]);
   const [toToken, setToToken] = useState<Token>(TOKENS.stellar[0]);
   const [fromAmount, setFromAmount] = useState<string>('1');
+  const [amountError, setAmountError] = useState<string>('');
   const [showFromTokens, setShowFromTokens] = useState(false);
   const [showToTokens, setShowToTokens] = useState(false);
   
@@ -76,6 +77,49 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     return '0.0000';
   };
 
+  // Input validation function
+  const validateAmount = (value: string): boolean => {
+    // Only allow numbers and one decimal point
+    const regex = /^[0-9]*\.?[0-9]*$/;
+    return regex.test(value);
+  };
+
+  // Handle amount input change
+  const handleAmountChange = (value: string) => {
+    // Clear previous error
+    setAmountError('');
+    
+    // Don't allow empty string or just decimal point
+    if (value === '' || value === '.') {
+      setFromAmount('');
+      return;
+    }
+    
+    // Validate input format (only numbers and decimal)
+    if (!validateAmount(value)) {
+      setAmountError('Sadece sayı girebilirsiniz');
+      return;
+    }
+    
+    // Check if amount is valid number
+    const numValue = parseFloat(value);
+    if (isNaN(numValue) || numValue < 0) {
+      setAmountError('Geçersiz miktar');
+      return;
+    }
+    
+    // Check if amount exceeds balance
+    const currentBalance = parseFloat(getCurrentBalance());
+    if (numValue > currentBalance) {
+      setAmountError(`Maksimum ${currentBalance} ${fromToken.symbol} girebilirsiniz`);
+      setFromAmount(value); // Still allow typing but show error
+      return;
+    }
+    
+    // If all validations pass
+    setFromAmount(value);
+  };
+
   // Dinamik döviz kuru hesaplama
   const calculateToAmount = () => {
     if (!fromAmount || isNaN(Number(fromAmount))) return '0';
@@ -94,11 +138,12 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     return Number(amount) * (token.price || 0);
   };
 
-  // Yüzdelik butonlar için handler
-  const handlePercentageClick = (percentage: number) => {
-    const newAmount = (parseFloat(getCurrentBalance()) * percentage / 100).toString();
-    setFromAmount(newAmount);
-  };
+      // Yüzdelik butonlar için handler
+    const handlePercentageClick = (percentage: number) => {
+      const balance = parseFloat(getCurrentBalance());
+      const newAmount = (balance * percentage / 100).toFixed(6);
+      handleAmountChange(newAmount);
+    };
 
   const handleSwapDirection = () => {
     const tempToken = fromToken;
@@ -135,6 +180,22 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     // Miktar kontrolü
     if (!fromAmount || Number(fromAmount) <= 0) {
       setBridgeError('Lütfen geçerli bir miktar girin!');
+      setTimeout(() => setBridgeError(''), 5000);
+      return;
+    }
+
+    // Balance kontrolü
+    const currentBalance = parseFloat(getCurrentBalance());
+    const amount = parseFloat(fromAmount);
+    if (amount > currentBalance) {
+      setBridgeError(`Yetersiz bakiye. Maksimum ${currentBalance} ${fromToken.symbol} gönderebilirsiniz`);
+      setTimeout(() => setBridgeError(''), 5000);
+      return;
+    }
+    
+    // Validation error kontrolü
+    if (amountError) {
+      setBridgeError('Lütfen geçerli bir miktar girin');
       setTimeout(() => setBridgeError(''), 5000);
       return;
     }
@@ -297,13 +358,20 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                 <input
                   type="text"
                   value={fromAmount}
-                  onChange={(e) => setFromAmount(e.target.value)}
-                  className="bg-transparent text-right text-3xl font-bold text-white outline-none w-32 placeholder-gray-500"
+                  onChange={(e) => handleAmountChange(e.target.value)}
+                  className={`bg-transparent text-right text-3xl font-bold outline-none w-32 placeholder-gray-500 ${
+                    amountError ? 'text-red-400' : 'text-white'
+                  }`}
                   placeholder="0.0"
                 />
                 <div className="text-gray-400 text-sm mt-1 font-medium">
                   ≈ ${calculateUSDValue(fromAmount, fromToken).toFixed(2)}
                 </div>
+                {amountError && (
+                  <div className="text-red-400 text-xs mt-1 font-medium">
+                    {amountError}
+                  </div>
+                )}
               </div>
             </div>
             
