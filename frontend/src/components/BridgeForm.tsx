@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 
 // Props interface
 interface BridgeFormProps {
@@ -40,8 +41,40 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [bridgeStatus, setBridgeStatus] = useState<string>('');
   const [bridgeError, setBridgeError] = useState<string>('');
 
-  // Mock bakiye
-  const mockBalance = 12.5047;
+  // Real ETH balance
+  const [ethBalance, setEthBalance] = useState<string>('0.0000');
+  const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false);
+
+  // Get real ETH balance from MetaMask
+  useEffect(() => {
+    const getEthBalance = async () => {
+      if (!ethAddress || !window.ethereum) return;
+      
+      setIsLoadingBalance(true);
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const balance = await provider.getBalance(ethAddress);
+        const balanceInEth = ethers.formatEther(balance);
+        setEthBalance(parseFloat(balanceInEth).toFixed(4));
+      } catch (error) {
+        console.error('Error getting ETH balance:', error);
+        setEthBalance('0.0000');
+      } finally {
+        setIsLoadingBalance(false);
+      }
+    };
+
+    getEthBalance();
+  }, [ethAddress]);
+
+  // Calculate balance for display
+  const getCurrentBalance = () => {
+    if (fromToken.symbol === 'ETH') {
+      return ethBalance;
+    }
+    // For other tokens, you can add similar logic
+    return '0.0000';
+  };
 
   // Dinamik döviz kuru hesaplama
   const calculateToAmount = () => {
@@ -63,7 +96,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
 
   // Yüzdelik butonlar için handler
   const handlePercentageClick = (percentage: number) => {
-    const newAmount = (mockBalance * percentage / 100).toString();
+    const newAmount = (parseFloat(getCurrentBalance()) * percentage / 100).toString();
     setFromAmount(newAmount);
   };
 
@@ -275,7 +308,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             </div>
             
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">Balance: {mockBalance} {fromToken.symbol}</span>
+                              <span className="text-gray-400">
+                  Balance: {isLoadingBalance ? 'Loading...' : getCurrentBalance()} {fromToken.symbol}
+                </span>
               <div className="flex gap-2">
                 <button 
                   onClick={() => handlePercentageClick(25)}
