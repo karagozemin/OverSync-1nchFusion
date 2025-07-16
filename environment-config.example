@@ -1,0 +1,185 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════
+# FUSIONBRIDGE ENVIRONMENT CONFIGURATION
+# Cross-chain bridge between Ethereum and Stellar
+# 
+# SETUP INSTRUCTIONS:
+# 1. Copy this file to .env in the root directory
+# 2. Replace placeholder values with your actual configuration
+# 3. NEVER commit .env to git (already in .gitignore)
+# ═══════════════════════════════════════════════════════════════════════════════════════
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# NETWORK CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Environment mode (development, staging, production)
+NODE_ENV=development
+
+# Active networks (testnet for development, mainnet for production)
+ETHEREUM_NETWORK=sepolia
+STELLAR_NETWORK=testnet
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# ETHEREUM CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Ethereum RPC URLs (Get from Infura, Alchemy, or other providers)
+ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
+MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID
+SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
+
+# Private keys (GENERATE NEW KEYS - NEVER use these examples!)
+PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
+RELAYER_PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
+
+# Smart contract addresses (Will be filled after deployment)
+HTLC_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
+HTLC_CONTRACT_ADDRESS_MAINNET=0x0000000000000000000000000000000000000000
+
+# Token addresses for cross-chain mapping
+USDC_TOKEN_ADDRESS=0xA0b86a33E6417C4fd30ad9D05D6b9b7cd6dd11B
+USDT_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
+DAI_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
+
+# Etherscan API key for contract verification
+ETHERSCAN_API_KEY=YOUR_ETHERSCAN_API_KEY
+
+# Gas configuration
+GAS_PRICE_GWEI=20
+GAS_LIMIT=300000
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# STELLAR CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Stellar Horizon URLs
+STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
+STELLAR_HORIZON_MAINNET_URL=https://horizon.stellar.org
+
+# Stellar Network Passphrases
+STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+STELLAR_MAINNET_PASSPHRASE=Public Global Stellar Network ; September 2015
+
+# Stellar account keys (GENERATE NEW KEYS - NEVER use these examples!)
+STELLAR_SECRET_KEY=SAMPLERELAYERSECRETKEYFORTEST12345678901234567890
+STELLAR_PUBLIC_KEY=GAJHQGR4KRB3MHAX5S3PUYBRSZ4HTSF3X6DSJK3PK3W2Q7OV2QRJP3W4
+
+# Relayer Stellar keys
+RELAYER_STELLAR_SECRET=SAMPLERELAYERSECRETKEYFORTEST12345678901234567890
+RELAYER_STELLAR_PUBLIC=GAJHQGR4KRB3MHAX5S3PUYBRSZ4HTSF3X6DSJK3PK3W2Q7OV2QRJP3W4
+
+# Asset mappings (Stellar asset codes)
+STELLAR_USDC_CODE=USDC
+STELLAR_USDC_ISSUER=GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+STELLAR_USDT_CODE=USDT
+STELLAR_USDT_ISSUER=GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6V
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# RELAYER SERVICE CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Relayer service settings
+RELAYER_PORT=3001
+RELAYER_POLL_INTERVAL=5000
+RELAYER_RETRY_ATTEMPTS=3
+RELAYER_RETRY_DELAY=2000
+
+# Event monitoring
+START_BLOCK_ETHEREUM=0
+START_LEDGER_STELLAR=0
+
+# Fee settings (in basis points, 100 = 1%)
+RELAYER_FEE_RATE=50
+MIN_SWAP_AMOUNT_USD=10
+MAX_SWAP_AMOUNT_USD=100000
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# FRONTEND CONFIGURATION
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Frontend server
+VITE_APP_PORT=5173
+VITE_APP_HOST=localhost
+
+# API endpoints
+VITE_API_BASE_URL=http://localhost:3001
+VITE_WS_URL=ws://localhost:3001
+
+# Wallet configuration
+VITE_WALLET_CONNECT_PROJECT_ID=YOUR_WALLET_CONNECT_PROJECT_ID
+VITE_ENABLE_TESTNET=true
+
+# Frontend feature flags
+VITE_ENABLE_PARTIAL_FILLS=true
+VITE_ENABLE_MULTI_TOKEN=true
+VITE_ENABLE_ANALYTICS=false
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# SECURITY & MONITORING
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# JWT & Authentication
+JWT_SECRET=your-super-secret-jwt-key-here-generate-new-one
+SESSION_SECRET=your-session-secret-here-generate-new-one
+
+# Rate limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Monitoring & Logging
+LOG_LEVEL=info
+ENABLE_REQUEST_LOGGING=true
+SENTRY_DSN=https://your-sentry-dsn-here
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# TIMELOCK & SECURITY SETTINGS
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# HTLC timelock constraints (in seconds)
+MIN_TIMELOCK_DURATION=3600
+MAX_TIMELOCK_DURATION=604800
+DEFAULT_TIMELOCK_DURATION=86400
+
+# Security thresholds
+MAX_ORDER_AMOUNT=1000000
+MIN_CONFIRMATION_BLOCKS=6
+STELLAR_MIN_CONFIRMATIONS=1
+
+# Emergency controls
+EMERGENCY_SHUTDOWN=false
+MAINTENANCE_MODE=false
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# DEVELOPMENT & TESTING
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Development flags
+DEBUG=true
+VERBOSE_LOGGING=true
+ENABLE_MOCK_MODE=true
+
+# Test accounts (testnet only - generate your own for real testing)
+TEST_ETHEREUM_ACCOUNT=0x742d35Cc6694C21e4f4e5a4b75F70a7d4F17E7A9
+TEST_STELLAR_ACCOUNT=GB6NVEN5HSUBKMYCE5ZOWSK5K23TBWRUQLZY3KNMXUZ3AQ2ESC4MY6AQ
+
+# Database (if needed for order tracking)
+DATABASE_URL=postgresql://user:password@localhost:5432/fusionbridge
+REDIS_URL=redis://localhost:6379
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# DEPLOYMENT SETTINGS
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Domain configuration
+DOMAIN=localhost
+CORS_ORIGIN=http://localhost:5173,http://localhost:3000
+ALLOWED_ORIGINS=localhost,127.0.0.1
+
+# SSL/TLS
+ENABLE_HTTPS=false
+SSL_CERT_PATH=./certs/cert.pem
+SSL_KEY_PATH=./certs/key.pem
+
+# Health checks
+HEALTH_CHECK_INTERVAL=30000
+HEALTH_CHECK_TIMEOUT=5000 
