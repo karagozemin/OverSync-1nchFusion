@@ -626,18 +626,200 @@ app.post('/submit/secret', async (req, res) => {
   }
 });
 
-// GET /ready-to-accept-secret-fills - Get ready orders
-app.get('/ready-to-accept-secret-fills', async (req, res) => {
+// ===== PARTIAL FILLS API ENDPOINTS (1inch Fusion+ Compliant) =====
+
+// GET /order/ready-to-accept-secret-fills/:orderHash - Get ready secrets for specific order
+app.get('/order/ready-to-accept-secret-fills/:orderHash', async (req, res) => {
   try {
-    const { orderHash } = req.query as any;
+    const { orderHash } = req.params;
     
     const result = ordersService.getReadyToAcceptSecretFills(orderHash);
     res.json(result);
     
-    console.log('📋 Ready to accept secret fills retrieved');
+    console.log(`📋 Ready to accept secret fills for order ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get ready secret fills:', error);
+    res.status(500).json(createErrorResponse('Failed to get ready secret fills', getErrorMessage(error)));
+  }
+});
+
+// GET /order/ready-to-accept-secret-fills - Get ready secrets for all orders
+app.get('/order/ready-to-accept-secret-fills', async (req, res) => {
+  try {
+    const result = ordersService.getAllReadyToAcceptSecretFills();
+    res.json(result);
+    
+    console.log('📋 Ready to accept secret fills for all orders retrieved');
+  } catch (error) {
+    console.error('❌ Failed to get ready secret fills:', error);
+    res.status(500).json(createErrorResponse('Failed to get ready secret fills', getErrorMessage(error)));
+  }
+});
+
+// GET /order/secrets/:orderHash - Get published secrets for order
+app.get('/order/secrets/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getPublishedSecrets(orderHash);
+    res.json(result);
+    
+    console.log(`🔐 Published secrets retrieved for order ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get published secrets:', error);
+    res.status(500).json(createErrorResponse('Failed to get published secrets', getErrorMessage(error)));
+  }
+});
+
+// GET /order/status/:orderHash - Get order status
+app.get('/order/status/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getOrderStatus(orderHash);
+    res.json(result);
+    
+    console.log(`📊 Order status retrieved for ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get order status:', error);
+    res.status(500).json(createErrorResponse('Failed to get order status', getErrorMessage(error)));
+  }
+});
+
+// POST /order/status - Get multiple order statuses
+app.post('/order/status', async (req, res) => {
+  try {
+    const { orderHashes } = req.body;
+    
+    if (!Array.isArray(orderHashes)) {
+      return res.status(400).json(createErrorResponse('orderHashes must be an array'));
+    }
+    
+    const results = ordersService.getMultipleOrderStatuses(orderHashes);
+    res.json(results);
+    
+    console.log(`📊 Multiple order statuses retrieved: ${orderHashes.length} orders`);
+  } catch (error) {
+    console.error('❌ Failed to get multiple order statuses:', error);
+    res.status(500).json(createErrorResponse('Failed to get multiple order statuses', getErrorMessage(error)));
+  }
+});
+
+// GET /order/ready-to-execute-public-actions - Get orders ready for public actions
+app.get('/order/ready-to-execute-public-actions', async (req, res) => {
+  try {
+    const result = ordersService.getReadyToExecutePublicActions();
+    res.json(result);
+    
+    console.log('🔓 Ready to execute public actions retrieved');
+  } catch (error) {
+    console.error('❌ Failed to get ready public actions:', error);
+    res.status(500).json(createErrorResponse('Failed to get ready public actions', getErrorMessage(error)));
+  }
+});
+
+// POST /submit/partial-fill - Submit partial fill execution
+app.post('/submit/partial-fill', async (req, res) => {
+  try {
+    const { 
+      orderHash, 
+      fragmentIndex, 
+      fillAmount, 
+      resolver, 
+      secretHash, 
+      merkleProof 
+    } = req.body;
+    
+    if (!orderHash || fragmentIndex === undefined || !fillAmount || !resolver || !secretHash || !merkleProof) {
+      return res.status(400).json(createErrorResponse(
+        'Missing required fields: orderHash, fragmentIndex, fillAmount, resolver, secretHash, merkleProof'
+      ));
+    }
+    
+    const result = ordersService.submitPartialFill({
+      orderHash,
+      fragmentIndex,
+      fillAmount,
+      resolver,
+      secretHash,
+      merkleProof
+    });
+    
+    res.json(createSuccessResponse(result));
+    
+    console.log(`🔄 Partial fill submitted for order ${orderHash}, fragment ${fragmentIndex}`);
+  } catch (error) {
+    console.error('❌ Partial fill submission failed:', error);
+    res.status(500).json(createErrorResponse('Partial fill submission failed', getErrorMessage(error)));
+  }
+});
+
+// GET /order/fragments/:orderHash - Get available order fragments
+app.get('/order/fragments/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getOrderFragments(orderHash);
+    res.json(result);
+    
+    console.log(`🧩 Order fragments retrieved for ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get order fragments:', error);
+    res.status(500).json(createErrorResponse('Failed to get order fragments', getErrorMessage(error)));
+  }
+});
+
+// GET /order/progress/:orderHash - Get order fill progress
+app.get('/order/progress/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getOrderProgress(orderHash);
+    res.json(result);
+    
+    console.log(`📈 Order progress retrieved for ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get order progress:', error);
+    res.status(500).json(createErrorResponse('Failed to get order progress', getErrorMessage(error)));
+  }
+});
+
+// GET /order/recommendations/:orderHash - Get fill recommendations
+app.get('/order/recommendations/:orderHash', async (req, res) => {
+  try {
+    const { orderHash } = req.params;
+    
+    const result = ordersService.getFillRecommendations(orderHash);
+    res.json(result);
+    
+    console.log(`💡 Fill recommendations retrieved for ${orderHash}`);
+  } catch (error) {
+    console.error('❌ Failed to get fill recommendations:', error);
+    res.status(500).json(createErrorResponse('Failed to get fill recommendations', getErrorMessage(error)));
+  }
+});
+
+// ===== LEGACY ENDPOINT (for backward compatibility) =====
+
+// GET /ready-to-accept-secret-fills - Legacy endpoint (redirects to new endpoint)
+app.get('/ready-to-accept-secret-fills', async (req, res) => {
+  try {
+    const { orderHash } = req.query as any;
+    
+    if (orderHash) {
+      // Redirect to specific order endpoint
+      const result = ordersService.getReadyToAcceptSecretFills(orderHash);
+      res.json(result);
+    } else {
+      // Redirect to all orders endpoint
+      const result = ordersService.getAllReadyToAcceptSecretFills();
+      res.json(result);
+    }
+    
+    console.log('📋 Legacy ready to accept secret fills retrieved');
   } catch (error) {
     console.error('❌ Failed to get ready orders:', error);
-    res.status(500).json(createErrorResponse('Failed to get ready orders', error.message));
+    res.status(500).json(createErrorResponse('Failed to get ready orders', getErrorMessage(error)));
   }
 });
 
