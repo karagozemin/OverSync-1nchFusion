@@ -18,6 +18,15 @@ import { presetManager } from './preset-manager.js';
 import { validateQuoteRequest, createErrorResponse, createSuccessResponse, getErrorMessage } from './utils.js';
 import { QuoteRequest, SignedOrderInput, SecretInput } from './types.js';
 
+// Phase 4: Event System imports
+import FusionEventManager, { EventType } from './event-handlers.js';
+import FusionRpcHandler from './rpc-methods.js';
+import EventHistoryManager from './event-history.js';
+import ClientSubscriptionManager from './client-subscriptions.js';
+
+// Phase 3.5: Resolver Integration imports
+import ResolverManager, { ResolverTier, ResolverStatus, WhitelistConfig } from './resolver-manager.js';
+
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
   // Service settings
@@ -181,6 +190,384 @@ process.on('SIGINT', gracefulShutdown);
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ===== PHASE 4: EVENT SYSTEM INITIALIZATION =====
+
+// Initialize event system components
+const eventManager = new FusionEventManager(ordersService);
+const eventHistoryManager = new EventHistoryManager();
+const clientSubscriptionManager = new ClientSubscriptionManager(eventManager);
+const rpcHandler = new FusionRpcHandler(ordersService, eventManager);
+
+// Set up event system integrations
+eventManager.setProgressiveFillManager(undefined); // Will be set when progressive fills are available
+
+// Connect event manager to event history
+eventManager.on('any', (event) => {
+  eventHistoryManager.addEvent(event);
+});
+
+console.log('✅ Phase 4: Event System initialized');
+
+// ===== PHASE 3.5: RESOLVER INTEGRATION INITIALIZATION =====
+
+// Initialize resolver whitelist configuration
+const resolverConfig: WhitelistConfig = {
+  requireWhitelist: true,
+  autoApproval: false,
+  maxResolvers: 100,
+  stakingRequirement: '1000000000000000000', // 1 ETH
+  kycRequired: true,
+  kybRequired: true,
+  competitionEnabled: true,
+  minReputationScore: 30
+};
+
+// Initialize resolver manager
+const resolverManager = new ResolverManager(ordersService, resolverConfig);
+
+// Connect resolver manager to event system
+resolverManager.on('competitionStarted', (event) => {
+  eventManager.emitEvent(EventType.FragmentReady, event.orderId, event);
+});
+
+resolverManager.on('competitionEnded', (event) => {
+  eventManager.emitEvent(EventType.SecretShared, event.orderId, event);
+});
+
+resolverManager.on('performanceUpdated', (event) => {
+  eventManager.emitEvent(EventType.RecommendationGenerated, event.address, event);
+});
+
+console.log('✅ Phase 3.5: Resolver Integration initialized');
+
+// ===== PHASE 4: EVENT SYSTEM ENDPOINTS =====
+
+// RPC endpoint for all RPC methods
+app.post('/api/rpc', async (req, res) => {
+  try {
+    const { method, params, id } = req.body;
+    
+    if (!method) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: { code: -32600, message: 'Invalid Request' },
+        id: id || null
+      });
+    }
+
+    const result = await rpcHandler.handleRpcRequest({
+      id: id || 'test-req',
+      method: method as any,
+      params: params || [],
+      timestamp: Date.now()
+    }, 'test-client');
+    
+    res.json({
+      jsonrpc: '2.0',
+      result,
+      id: id || null
+    });
+  } catch (error) {
+    res.status(500).json({
+      jsonrpc: '2.0',
+      error: { 
+        code: -32603, 
+        message: 'Internal error',
+        data: error instanceof Error ? error.message : 'Unknown error'
+      },
+      id: req.body.id || null
+    });
+  }
+});
+
+// Test event trigger endpoint
+app.post('/api/trigger-test-events', async (req, res) => {
+  try {
+    const { eventType, count = 1 } = req.body;
+    
+    if (!eventType) {
+      return res.status(400).json({ error: 'Event type is required' });
+    }
+
+    const results = [];
+    for (let i = 0; i < count; i++) {
+      // Generate test events using triggerTestEvents
+      const testOrderHash = `test-order-${Date.now()}-${i}`;
+      eventManager.triggerTestEvents(testOrderHash);
+      
+      // Create a simple event for response
+      const event = {
+        eventId: `test-${Date.now()}-${i}`,
+        eventType: eventType,
+        timestamp: Date.now(),
+        data: { orderHash: testOrderHash },
+        metadata: { source: 'test-trigger' }
+      };
+      results.push(event);
+    }
+
+    res.json({
+      success: true,
+      eventsGenerated: results.length,
+      events: results
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to trigger test events',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Event history endpoint
+app.get('/api/events', async (req, res) => {
+  try {
+    const { limit, offset, eventType, orderId } = req.query;
+    
+    const result = eventHistoryManager.queryEvents({
+      limit: limit ? parseInt(limit as string) : 50,
+      offset: offset ? parseInt(offset as string) : 0,
+      eventTypes: eventType ? [eventType as any] : undefined,
+      orderHashes: orderId ? [orderId as string] : undefined
+    });
+    
+    const events = result.events;
+
+    res.json({
+      success: true,
+      events,
+      total: events.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get event history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Client subscription endpoint
+app.post('/api/subscribe', async (req, res) => {
+  try {
+    const { clientId, events, orderIds, resolvers, chains } = req.body;
+    
+    if (!clientId) {
+      return res.status(400).json({ error: 'Client ID is required' });
+    }
+
+    const subscriptionId = clientSubscriptionManager.createSubscription({
+      clientId,
+      eventTypes: events || [],
+      filters: {
+        orderHashes: orderIds || [],
+        resolvers: resolvers || [],
+        chainIds: chains || []
+      }
+    });
+
+    res.json({
+      success: true,
+      subscriptionId
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to create subscription',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// ===== PHASE 3.5: RESOLVER INTEGRATION ENDPOINTS =====
+
+// GET /resolvers - Get all whitelisted resolvers
+app.get('/resolvers', async (req, res) => {
+  try {
+    const resolvers = resolverManager.getResolvers();
+    res.json(createSuccessResponse(resolvers));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get resolvers', getErrorMessage(error)));
+  }
+});
+
+// GET /resolvers/:address - Get specific resolver
+app.get('/resolvers/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const resolver = resolverManager.getResolver(address);
+    
+    if (!resolver) {
+      return res.status(404).json(createErrorResponse('Resolver not found'));
+    }
+    
+    res.json(createSuccessResponse(resolver));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get resolver', getErrorMessage(error)));
+  }
+});
+
+// POST /resolvers - Add new resolver to whitelist
+app.post('/resolvers', async (req, res) => {
+  try {
+    const { address, name, description, website, tier } = req.body;
+    
+    if (!address) {
+      return res.status(400).json(createErrorResponse('Resolver address is required'));
+    }
+    
+    const added = resolverManager.addResolver(address, {
+      name,
+      description,
+      website,
+      kycStatus: 'pending',
+      kybStatus: 'pending'
+    }, tier || ResolverTier.Standard);
+    
+    if (!added) {
+      return res.status(400).json(createErrorResponse('Resolver already exists'));
+    }
+    
+    res.json(createSuccessResponse({ address, added: true }));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to add resolver', getErrorMessage(error)));
+  }
+});
+
+// PUT /resolvers/:address/status - Update resolver status
+app.put('/resolvers/:address/status', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { status } = req.body;
+    
+    if (!Object.values(ResolverStatus).includes(status)) {
+      return res.status(400).json(createErrorResponse('Invalid status'));
+    }
+    
+    const updated = resolverManager.updateResolverStatus(address, status);
+    
+    if (!updated) {
+      return res.status(404).json(createErrorResponse('Resolver not found'));
+    }
+    
+    res.json(createSuccessResponse({ address, status, updated: true }));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to update resolver status', getErrorMessage(error)));
+  }
+});
+
+// DELETE /resolvers/:address - Remove resolver from whitelist
+app.delete('/resolvers/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    
+    const removed = resolverManager.removeResolver(address);
+    
+    if (!removed) {
+      return res.status(404).json(createErrorResponse('Resolver not found'));
+    }
+    
+    res.json(createSuccessResponse({ address, removed: true }));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to remove resolver', getErrorMessage(error)));
+  }
+});
+
+// GET /competitions - Get active competitions
+app.get('/competitions', async (req, res) => {
+  try {
+    const competitions = resolverManager.getActiveCompetitions();
+    res.json(createSuccessResponse(competitions));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get competitions', getErrorMessage(error)));
+  }
+});
+
+// POST /competitions/start - Start competition for fragment
+app.post('/competitions/start', async (req, res) => {
+  try {
+    const { orderId, fragmentIndex } = req.body;
+    
+    if (!orderId || fragmentIndex === undefined) {
+      return res.status(400).json(createErrorResponse('Order ID and fragment index are required'));
+    }
+    
+    const competition = resolverManager.startCompetition(orderId, fragmentIndex);
+    res.json(createSuccessResponse(competition));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to start competition', getErrorMessage(error)));
+  }
+});
+
+// POST /competitions/bid - Submit bid for competition
+app.post('/competitions/bid', async (req, res) => {
+  try {
+    const { 
+      orderId, 
+      fragmentIndex, 
+      resolverAddress, 
+      bidAmount, 
+      gasPrice, 
+      executionTime, 
+      confidence 
+    } = req.body;
+    
+    if (!orderId || fragmentIndex === undefined || !resolverAddress || !bidAmount) {
+      return res.status(400).json(createErrorResponse(
+        'Order ID, fragment index, resolver address, and bid amount are required'
+      ));
+    }
+    
+    const bid = {
+      orderId,
+      fragmentIndex,
+      resolverAddress,
+      bidAmount,
+      gasPrice: gasPrice || '20000000000', // 20 gwei default
+      executionTime: executionTime || 5000, // 5 seconds default
+      confidence: confidence || 80, // 80% default
+      timestamp: Date.now()
+    };
+    
+    const submitted = resolverManager.submitBid(bid);
+    
+    if (!submitted) {
+      return res.status(400).json(createErrorResponse('Failed to submit bid'));
+    }
+    
+    res.json(createSuccessResponse({ bid, submitted: true }));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to submit bid', getErrorMessage(error)));
+  }
+});
+
+// GET /competitions/:orderId/:fragmentIndex - Get specific competition
+app.get('/competitions/:orderId/:fragmentIndex', async (req, res) => {
+  try {
+    const { orderId, fragmentIndex } = req.params;
+    
+    const competition = resolverManager.getCompetition(orderId, parseInt(fragmentIndex));
+    
+    if (!competition) {
+      return res.status(404).json(createErrorResponse('Competition not found'));
+    }
+    
+    res.json(createSuccessResponse(competition));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get competition', getErrorMessage(error)));
+  }
+});
+
+// GET /order/:orderId/resolver-recommendations - Get resolver recommendations
+app.get('/order/:orderId/resolver-recommendations', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    const recommendations = resolverManager.getResolverRecommendations(orderId);
+    res.json(createSuccessResponse(recommendations));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get resolver recommendations', getErrorMessage(error)));
+  }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -736,6 +1123,21 @@ app.post('/submit/partial-fill', async (req, res) => {
       ));
     }
     
+    // Phase 3.5: Resolver validation
+    if (!resolverManager.isResolverAllowed(resolver)) {
+      return res.status(403).json(createErrorResponse('Resolver not whitelisted or inactive'));
+    }
+    
+    const permissions = resolverManager.getResolverPermissions(resolver);
+    if (!permissions || !permissions.canFillPartial) {
+      return res.status(403).json(createErrorResponse('Resolver not authorized for partial fills'));
+    }
+    
+    // Check fill amount limits
+    if (permissions.maxFillAmount && BigInt(fillAmount) > BigInt(permissions.maxFillAmount)) {
+      return res.status(400).json(createErrorResponse('Fill amount exceeds resolver limit'));
+    }
+    
     const result = ordersService.submitPartialFill({
       orderHash,
       fragmentIndex,
@@ -745,9 +1147,24 @@ app.post('/submit/partial-fill', async (req, res) => {
       merkleProof
     });
     
+    // Update resolver performance
+    resolverManager.updateResolverPerformance(resolver, {
+      fillId: result.fillId,
+      orderId: orderHash,
+      fragmentIndex,
+      resolver,
+      fillAmount,
+      auctionPrice: '1000000000000000000', // Mock price
+      gasCost: '100000000000000000', // Mock gas cost
+      secretHash,
+      merkleProof,
+      status: 'executed',
+      executedAt: Date.now()
+    });
+    
     res.json(createSuccessResponse(result));
     
-    console.log(`🔄 Partial fill submitted for order ${orderHash}, fragment ${fragmentIndex}`);
+    console.log(`🔄 Partial fill submitted for order ${orderHash}, fragment ${fragmentIndex} by resolver ${resolver}`);
   } catch (error) {
     console.error('❌ Partial fill submission failed:', error);
     res.status(500).json(createErrorResponse('Partial fill submission failed', getErrorMessage(error)));
