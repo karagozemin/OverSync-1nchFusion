@@ -1,121 +1,207 @@
-import { useNotification, NotificationType } from '../contexts/NotificationContext';
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 
-interface ToastProps {
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface Toast {
   id: string;
-  type: NotificationType;
+  type: ToastType;
+  title: string;
   message: string;
-  onClose: () => void;
+  duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
-export default function Toast({ id, type, message, onClose }: ToastProps) {
+interface ToastProps {
+  toast: Toast;
+  onClose: (id: string) => void;
+}
+
+const ToastComponent = ({ toast, onClose }: ToastProps) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
-    // Animasyon için kısa bir gecikme
-    const timeout = setTimeout(() => {
-      setIsVisible(true);
-    }, 100);
+    // Trigger animation after mount
+    setTimeout(() => setIsVisible(true), 10);
 
-    return () => clearTimeout(timeout);
-  }, []);
+    // Auto-close after duration
+    if (toast.duration && toast.duration > 0) {
+      const timer = setTimeout(() => {
+        handleClose();
+      }, toast.duration);
+
+      return () => clearTimeout(timer);
+    }
+  }, [toast.duration]);
 
   const handleClose = () => {
-    setIsVisible(false);
-    setTimeout(onClose, 300); // Çıkış animasyonu için zaman tanı
+    setIsExiting(true);
+    setTimeout(() => {
+      onClose(toast.id);
+    }, 300);
   };
 
-  // Bildirim tipine göre stil ve ikon belirleme
-  const getToastStyles = () => {
-    switch (type) {
+  const getIcon = () => {
+    switch (toast.type) {
       case 'success':
-        return {
-          bgColor: 'bg-green-500/20',
-          borderColor: 'border-green-500/30',
-          textColor: 'text-green-300',
-          icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          )
-        };
+        return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'error':
-        return {
-          bgColor: 'bg-red-500/20',
-          borderColor: 'border-red-500/30',
-          textColor: 'text-red-300',
-          icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          )
-        };
+        return <AlertCircle className="h-5 w-5 text-red-500" />;
       case 'warning':
-        return {
-          bgColor: 'bg-yellow-500/20',
-          borderColor: 'border-yellow-500/30',
-          textColor: 'text-yellow-300',
-          icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          )
-        };
+        return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
       case 'info':
       default:
-        return {
-          bgColor: 'bg-blue-500/20',
-          borderColor: 'border-blue-500/30',
-          textColor: 'text-blue-300',
-          icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          )
-        };
+        return <Info className="h-5 w-5 text-blue-500" />;
     }
   };
 
-  const { bgColor, borderColor, textColor, icon } = getToastStyles();
+  const getStyles = () => {
+    const baseStyles = "border-l-4 shadow-lg";
+    switch (toast.type) {
+      case 'success':
+        return `${baseStyles} bg-green-50 dark:bg-green-900/20 border-green-500`;
+      case 'error':
+        return `${baseStyles} bg-red-50 dark:bg-red-900/20 border-red-500`;
+      case 'warning':
+        return `${baseStyles} bg-yellow-50 dark:bg-yellow-900/20 border-yellow-500`;
+      case 'info':
+      default:
+        return `${baseStyles} bg-blue-50 dark:bg-blue-900/20 border-blue-500`;
+    }
+  };
+
+  const getTextColor = () => {
+    switch (toast.type) {
+      case 'success':
+        return 'text-green-800 dark:text-green-200';
+      case 'error':
+        return 'text-red-800 dark:text-red-200';
+      case 'warning':
+        return 'text-yellow-800 dark:text-yellow-200';
+      case 'info':
+      default:
+        return 'text-blue-800 dark:text-blue-200';
+    }
+  };
 
   return (
-    <div 
-      className={`flex items-center gap-3 p-4 rounded-lg border shadow-lg backdrop-blur-sm transition-all duration-300 transform ${bgColor} ${borderColor} ${textColor} ${
-        isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-      }`}
+    <div
+      className={`
+        transform transition-all duration-300 ease-in-out
+        ${isVisible && !isExiting ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
+        ${getStyles()}
+        rounded-lg p-4 mb-3 max-w-md w-full
+      `}
     >
-      <div className="flex-shrink-0">
-        {icon}
+      <div className="flex items-start">
+        <div className="flex-shrink-0">
+          {getIcon()}
+        </div>
+        <div className="ml-3 flex-1">
+          <h3 className={`text-sm font-medium ${getTextColor()}`}>
+            {toast.title}
+          </h3>
+          <p className={`text-sm mt-1 ${getTextColor()} opacity-75`}>
+            {toast.message}
+          </p>
+          {toast.action && (
+            <div className="mt-2">
+              <button
+                onClick={toast.action.onClick}
+                className={`text-sm font-medium underline hover:no-underline ${getTextColor()}`}
+              >
+                {toast.action.label}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="ml-4 flex-shrink-0">
+          <button
+            onClick={handleClose}
+            className={`inline-flex rounded-md p-1.5 hover:bg-black/10 dark:hover:bg-white/10 ${getTextColor()}`}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-      <div className="flex-1">
-        <p className="font-medium">{message}</p>
-      </div>
-      <button 
-        onClick={handleClose}
-        className="text-gray-400 hover:text-white transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
     </div>
   );
+};
+
+// Toast Container Component
+interface ToastContainerProps {
+  toasts: Toast[];
+  onClose: (id: string) => void;
 }
 
-export function ToastContainer() {
-  const { notifications, removeNotification } = useNotification();
-
+export const ToastContainer = ({ toasts, onClose }: ToastContainerProps) => {
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
-      {notifications.map((notification) => (
-        <Toast
-          key={notification.id}
-          id={notification.id}
-          type={notification.type}
-          message={notification.message}
-          onClose={() => removeNotification(notification.id)}
+    <div className="fixed top-4 right-4 z-50 space-y-2">
+      {toasts.map((toast) => (
+        <ToastComponent
+          key={toast.id}
+          toast={toast}
+          onClose={onClose}
         />
       ))}
     </div>
   );
-} 
+};
+
+// Toast Hook
+export const useToast = () => {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = (toast: Omit<Toast, 'id'>) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newToast: Toast = {
+      id,
+      duration: 5000, // default 5 seconds
+      ...toast,
+    };
+    setToasts((prev) => [...prev, newToast]);
+    return id;
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  };
+
+  const clearAll = () => {
+    setToasts([]);
+  };
+
+  // Convenience methods
+  const success = (title: string, message: string, options?: Partial<Toast>) => {
+    return addToast({ type: 'success', title, message, ...options });
+  };
+
+  const error = (title: string, message: string, options?: Partial<Toast>) => {
+    return addToast({ type: 'error', title, message, ...options });
+  };
+
+  const warning = (title: string, message: string, options?: Partial<Toast>) => {
+    return addToast({ type: 'warning', title, message, ...options });
+  };
+
+  const info = (title: string, message: string, options?: Partial<Toast>) => {
+    return addToast({ type: 'info', title, message, ...options });
+  };
+
+  return {
+    toasts,
+    addToast,
+    removeToast,
+    clearAll,
+    success,
+    error,
+    warning,
+    info,
+  };
+};
+
+export default ToastComponent; 

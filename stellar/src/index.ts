@@ -6,6 +6,7 @@
 // Main exports
 export { default as StellarClient, default } from './stellar-client.js';
 export { StellarHTLCManager } from './claimable-balance.js';
+export { EnhancedStellarBridge } from './enhanced-stellar-bridge.js';
 
 // Types and interfaces
 export type {
@@ -15,6 +16,14 @@ export type {
   ClaimParams,
   RefundParams,
 } from './claimable-balance';
+
+export type {
+  EnhancedBridgeConfig,
+  CrossChainOrderParams,
+  BridgeOrderState,
+} from './enhanced-stellar-bridge.js';
+
+export { BridgeOrderStatus } from './enhanced-stellar-bridge.js';
 
 export type {
   CrossChainOrder,
