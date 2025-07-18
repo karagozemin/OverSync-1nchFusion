@@ -21,7 +21,10 @@ export enum EventType {
   // Additional events for better tracking
   ProgressUpdate = 'progress_update',
   RecommendationGenerated = 'recommendation_generated',
-  FragmentReady = 'fragment_ready'
+  FragmentReady = 'fragment_ready',
+  
+  // Recovery events
+  Recovery = 'recovery'
 }
 
 // Event data structures (1inch compliant)
@@ -106,6 +109,13 @@ export interface EventMessage {
     resolver?: string;
     chainId?: number;
     urgent?: boolean;
+    recoveryId?: string;
+    recoveryType?: string;
+    recoveryStatus?: string;
+    error?: string;
+    type?: string;
+    status?: string;
+    timestamp?: number;
   };
 }
 

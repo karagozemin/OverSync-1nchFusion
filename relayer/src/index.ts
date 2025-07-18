@@ -7,6 +7,9 @@ import { config } from 'dotenv';
 import { resolve } from 'path';
 import express from 'express';
 import cors from 'cors';
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
@@ -26,6 +29,9 @@ import ClientSubscriptionManager from './client-subscriptions.js';
 
 // Phase 3.5: Resolver Integration imports
 import ResolverManager, { ResolverTier, ResolverStatus, WhitelistConfig } from './resolver-manager.js';
+
+// Phase 5: Recovery System imports
+import RecoveryService, { RecoveryConfig, RecoveryType, RecoveryStatus } from './recovery-service.js';
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
@@ -240,6 +246,32 @@ resolverManager.on('performanceUpdated', (event) => {
 });
 
 console.log('✅ Phase 3.5: Resolver Integration initialized');
+
+// ===== PHASE 5: RECOVERY SYSTEM INITIALIZATION =====
+
+// Initialize recovery configuration
+const recoveryConfig: RecoveryConfig = {
+  monitoringInterval: 30000, // 30 seconds
+  autoRefundEnabled: true,
+  emergencyEnabled: true,
+  maxRetries: 3,
+  retryDelay: 60000, // 1 minute
+  gracePeriod: 300 // 5 minutes after timelock
+};
+
+// Initialize recovery service
+const recoveryService = new RecoveryService(ordersService, eventManager, recoveryConfig);
+
+// Connect recovery service to event system
+recoveryService.on('recoveryCompleted', (event) => {
+  console.log(`✅ Recovery completed: ${event.recoveryId}`);
+});
+
+recoveryService.on('recoveryFailed', (event) => {
+  console.log(`❌ Recovery failed: ${event.recoveryId} - ${event.error}`);
+});
+
+console.log('✅ Phase 5: Recovery System initialized');
 
 // ===== PHASE 4: EVENT SYSTEM ENDPOINTS =====
 
@@ -1237,6 +1269,130 @@ app.get('/ready-to-accept-secret-fills', async (req, res) => {
   } catch (error) {
     console.error('❌ Failed to get ready orders:', error);
     res.status(500).json(createErrorResponse('Failed to get ready orders', getErrorMessage(error)));
+  }
+});
+
+// ===== PHASE 5: RECOVERY SYSTEM ENDPOINTS =====
+
+// GET /recovery/stats - Get recovery statistics
+app.get('/recovery/stats', async (req, res) => {
+  try {
+    const stats = recoveryService.getRecoveryStats();
+    res.json(createSuccessResponse(stats));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get recovery stats', getErrorMessage(error)));
+  }
+});
+
+// GET /recovery/requests - Get all recovery requests
+app.get('/recovery/requests', async (req, res) => {
+  try {
+    const requests = recoveryService.getRecoveryRequests();
+    res.json(createSuccessResponse(requests));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get recovery requests', getErrorMessage(error)));
+  }
+});
+
+// GET /recovery/requests/:recoveryId - Get specific recovery request
+app.get('/recovery/requests/:recoveryId', async (req, res) => {
+  try {
+    const { recoveryId } = req.params;
+    const request = recoveryService.getRecoveryRequest(recoveryId);
+    
+    if (!request) {
+      return res.status(404).json(createErrorResponse('Recovery request not found'));
+    }
+    
+    res.json(createSuccessResponse(request));
+  } catch (error) {
+    res.status(500).json(createErrorResponse('Failed to get recovery request', getErrorMessage(error)));
+  }
+});
+
+// POST /recovery/manual - Initiate manual recovery
+app.post('/recovery/manual', async (req, res) => {
+  try {
+    const { orderHash, type, initiator, reason, metadata } = req.body;
+    
+    if (!orderHash || !type || !initiator || !reason) {
+      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, type, initiator, reason'));
+    }
+    
+    // Validate recovery type
+    if (!Object.values(RecoveryType).includes(type)) {
+      return res.status(400).json(createErrorResponse(`Invalid recovery type: ${type}`));
+    }
+    
+    const recoveryId = await recoveryService.initiateManualRecovery(
+      orderHash,
+      type,
+      initiator,
+      reason,
+      metadata || {}
+    );
+    
+    res.json(createSuccessResponse({ recoveryId }));
+    
+    console.log(`🔄 Manual recovery initiated: ${recoveryId} by ${initiator}`);
+  } catch (error) {
+    console.error('❌ Manual recovery failed:', error);
+    res.status(500).json(createErrorResponse('Manual recovery failed', getErrorMessage(error)));
+  }
+});
+
+// POST /recovery/emergency - Initiate emergency recovery
+app.post('/recovery/emergency', async (req, res) => {
+  try {
+    const { orderHash, reason, initiator } = req.body;
+    
+    if (!orderHash || !reason || !initiator) {
+      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, reason, initiator'));
+    }
+    
+    const recoveryId = await recoveryService.emergencyRecovery(orderHash, reason, initiator);
+    
+    res.json(createSuccessResponse({ recoveryId }));
+    
+    console.log(`🚨 Emergency recovery initiated: ${recoveryId} by ${initiator}`);
+  } catch (error) {
+    console.error('❌ Emergency recovery failed:', error);
+    res.status(500).json(createErrorResponse('Emergency recovery failed', getErrorMessage(error)));
+  }
+});
+
+// POST /recovery/test - Test recovery system (development only)
+app.post('/recovery/test', async (req, res) => {
+  try {
+    const { orderHash, type } = req.body;
+    
+    if (!orderHash || !type) {
+      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, type'));
+    }
+    
+    // Validate recovery type
+    if (!Object.values(RecoveryType).includes(type)) {
+      return res.status(400).json(createErrorResponse(`Invalid recovery type: ${type}`));
+    }
+    
+    const recoveryId = await recoveryService.initiateManualRecovery(
+      orderHash,
+      type,
+      'test-system',
+      'Recovery system test',
+      { test: true }
+    );
+    
+    res.json(createSuccessResponse({ 
+      recoveryId, 
+      message: 'Test recovery initiated',
+      type 
+    }));
+    
+    console.log(`🧪 Test recovery initiated: ${recoveryId}`);
+  } catch (error) {
+    console.error('❌ Test recovery failed:', error);
+    res.status(500).json(createErrorResponse('Test recovery failed', getErrorMessage(error)));
   }
 });
 
