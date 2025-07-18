@@ -4,18 +4,7 @@
  */
 
 import crypto from 'crypto';
-import {
-  Keypair,
-  Asset,
-  TransactionBuilder,
-  Operation,
-  Networks,
-  Claimant,
-  BASE_FEE,
-  TimeoutInfinite,
-  Memo,
-} from '@stellar/stellar-sdk';
-import { Server } from '@stellar/stellar-sdk/lib/horizon/index.js';
+import { Server } from '@stellar/stellar-sdk/lib/horizon';
 
 /**
  * Stellar configuration
