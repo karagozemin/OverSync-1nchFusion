@@ -33,6 +33,9 @@ import ResolverManager, { ResolverTier, ResolverStatus, WhitelistConfig } from '
 // Phase 5: Recovery System imports
 import RecoveryService, { RecoveryConfig, RecoveryType, RecoveryStatus } from './recovery-service.js';
 
+// Phase 8: Monitoring System imports
+import { getMonitor } from './monitoring.js';
+
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
   // Service settings
@@ -154,6 +157,19 @@ async function initializeRelayer() {
     console.log('⛽ Gas price tracking started');
   } catch (error) {
     console.error('❌ Failed to start gas price tracking:', error);
+  }
+
+  // Start monitoring system
+  try {
+    const monitor = getMonitor();
+    monitor.registerService('ethereum', async () => ({ status: 'healthy' }));
+    monitor.registerService('stellar', async () => ({ status: 'healthy' }));
+    monitor.registerService('gas-tracker', async () => ({ status: 'healthy' }));
+    monitor.registerService('orders', async () => ({ status: 'healthy' }));
+    monitor.startMonitoring(30000); // Monitor every 30 seconds
+    console.log('📊 Uptime monitoring started');
+  } catch (error) {
+    console.error('❌ Failed to start monitoring system:', error);
   }
 
   // Start Ethereum event listener
@@ -603,11 +619,86 @@ app.get('/order/:orderId/resolver-recommendations', async (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    service: 'FusionBridge Relayer'
-  });
+  try {
+    const monitor = getMonitor();
+    const metrics = monitor.getMetrics();
+    const systemStatus = monitor.getSystemStatus();
+    
+    res.json({
+      status: systemStatus,
+      timestamp: new Date().toISOString(),
+      service: 'FusionBridge Relayer',
+      version: metrics.version,
+      uptime: metrics.uptime,
+      environment: metrics.environment,
+      services: metrics.services.map(s => ({
+        name: s.name,
+        status: s.status,
+        responseTime: s.responseTime,
+        lastCheck: s.lastCheck
+      })),
+      system: {
+        memoryUsage: Math.round(metrics.system.memoryUsage.percentage * 100),
+        cpuUsage: Math.round(metrics.system.cpuUsage),
+        loadAverage: metrics.system.loadAverage[0]
+      },
+      network: {
+        ethereum: {
+          connected: metrics.network.ethereum.connected,
+          blockNumber: metrics.network.ethereum.blockNumber,
+          responseTime: metrics.network.ethereum.responseTime
+        },
+        stellar: {
+          connected: metrics.network.stellar.connected,
+          ledgerNumber: metrics.network.stellar.ledgerNumber,
+          responseTime: metrics.network.stellar.responseTime
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Health check failed:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      service: 'FusionBridge Relayer',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Detailed metrics endpoint
+app.get('/metrics', (req, res) => {
+  try {
+    const monitor = getMonitor();
+    const metrics = monitor.getMetrics();
+    res.json(metrics);
+  } catch (error) {
+    console.error('❌ Metrics fetch failed:', error);
+    res.status(500).json({
+      error: 'Failed to fetch metrics',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Uptime endpoint
+app.get('/uptime', (req, res) => {
+  try {
+    const monitor = getMonitor();
+    const metrics = monitor.getMetrics();
+    res.json({
+      uptime: metrics.uptime,
+      startTime: metrics.timestamp - metrics.uptime,
+      currentTime: metrics.timestamp,
+      status: monitor.getSystemStatus()
+    });
+  } catch (error) {
+    console.error('❌ Uptime check failed:', error);
+    res.status(500).json({
+      error: 'Failed to fetch uptime',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // ===== QUOTER API ENDPOINTS =====

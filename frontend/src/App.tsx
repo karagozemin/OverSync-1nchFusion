@@ -3,6 +3,7 @@ import BridgeForm from './components/BridgeForm'
 import FreighterTest from './components/FreighterTest'
 import DutchAuction from './components/DutchAuction'
 import RecoveryPanel from './components/RecoveryPanel'
+import TestnetBanner from './components/TestnetBanner'
 import { AnimatedDarkModeToggle } from './components/DarkModeToggle'
 import { ToastContainer, useToast } from './components/Toast'
 import { useFreighter } from './hooks/useFreighter'
@@ -245,6 +246,9 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {/* Testnet Banner */}
+      <TestnetBanner className="max-w-4xl mx-auto mt-6 px-6" />
 
       {/* Hero Section */}
       <div className="text-center py-12 px-6">

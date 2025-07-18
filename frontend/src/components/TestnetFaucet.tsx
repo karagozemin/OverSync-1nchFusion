@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNotification } from '../contexts/NotificationContext';
+import { useToast } from './Toast';
+import { getFaucets, isTestnet } from '../config/networks';
 
 interface TestnetFaucetProps {
   ethAddress?: string;
@@ -8,42 +9,30 @@ interface TestnetFaucetProps {
 
 export default function TestnetFaucet({ ethAddress, stellarAddress }: TestnetFaucetProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const { addNotification } = useNotification();
+  const toast = useToast();
 
+  // Only show faucets on testnet
+  if (!isTestnet()) {
+    return null;
+  }
+
+  const faucetConfig = getFaucets();
   const faucets = [
-    {
-      name: 'Sepolia ETH',
-      url: 'https://sepoliafaucet.com/',
-      description: 'Get Sepolia ETH for testing',
+    ...faucetConfig.ethereum.map(faucet => ({
+      ...faucet,
       network: 'ethereum',
       icon: '🦊'
-    },
-    {
-      name: 'Sepolia USDC',
-      url: 'https://staging.app.compound.finance/',
-      description: 'Get Sepolia USDC from Compound Finance',
-      network: 'ethereum',
-      icon: '💰'
-    },
-    {
-      name: 'Stellar Testnet XLM',
-      url: 'https://laboratory.stellar.org/#account-creator?network=test',
-      description: 'Create account and get testnet XLM',
+    })),
+    ...faucetConfig.stellar.map(faucet => ({
+      ...faucet,
       network: 'stellar',
       icon: '⭐'
-    },
-    {
-      name: 'Stellar Testnet Assets',
-      url: 'https://stellar.org/laboratory',
-      description: 'Create and issue testnet assets',
-      network: 'stellar',
-      icon: '🪙'
-    }
+    }))
   ];
 
   const copyAddress = (address: string, type: string) => {
     navigator.clipboard.writeText(address);
-    addNotification('success', `${type} address copied to clipboard!`, 3000);
+    toast.success('Address Copied!', `${type} address copied to clipboard!`);
   };
 
   return (

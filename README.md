@@ -112,6 +112,51 @@ Before running the project, you need to configure environment variables:
 
 > ⚠️ **Security Note**: Never commit real private keys to git. The `.env` file is already in `.gitignore`.
 
+## 🧪 Testnet Setup
+
+**Important:** FusionBridge currently runs on **testnet networks only** for safe testing.
+
+### 🦊 Ethereum Sepolia Testnet
+
+1. **Add Sepolia to MetaMask:**
+   - Network Name: Sepolia test network
+   - Chain ID: 11155111
+   - RPC URL: https://sepolia.infura.io/v3/YOUR_PROJECT_ID
+   - Currency Symbol: ETH
+   - Block Explorer: https://sepolia.etherscan.io
+
+2. **Get Sepolia ETH:**
+   - **Sepolia Faucet**: https://sepoliafaucet.com/
+   - **Alchemy Faucet**: https://sepoliafaucet.com/
+   - Requires social verification or Ethereum mainnet balance
+
+### ⭐ Stellar Testnet
+
+1. **Create Testnet Account:**
+   - **Stellar Laboratory**: https://laboratory.stellar.org/#account-creator
+   - Creates account with 10,000 testnet XLM
+   - Save your secret key securely
+
+2. **Alternative Faucets:**
+   - **Stellar Quest**: https://quest.stellar.org/faucet
+   - **Friendbot**: https://friendbot.stellar.org
+
+### 💰 Required Tokens for Testing
+
+| Direction | Source Token | Destination Token | Requirements |
+|-----------|--------------|-------------------|--------------|
+| ETH → XLM | Sepolia ETH  | Testnet XLM       | MetaMask + Freighter wallets |
+| XLM → ETH | Testnet XLM  | Sepolia ETH       | Freighter + MetaMask wallets |
+
+### 🔗 Wallet Setup
+
+1. **Install MetaMask**: https://metamask.io/
+2. **Install Freighter**: https://freighter.app/
+3. **Fund both wallets** with testnet tokens
+4. **Connect both wallets** in the FusionBridge UI
+
+> 💡 **Pro tip**: The app shows a testnet banner with direct faucet links when running on testnet networks.
+
 ### Development
 
 ```bash

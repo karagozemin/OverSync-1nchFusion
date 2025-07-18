@@ -15,15 +15,22 @@
     "start": "pnpm --filter relayer start",
     "dev": "pnpm -r dev",
     "build": "pnpm -r build",
+    "build:prod": "NODE_ENV=production pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "clean": "pnpm -r clean && rm -rf node_modules",
     "contracts:compile": "pnpm --filter contracts compile",
     "contracts:deploy": "pnpm --filter contracts deploy",
+    "contracts:deploy:sepolia": "pnpm --filter contracts deploy:sepolia",
     "stellar:build": "pnpm --filter stellar build",
     "relayer:start": "pnpm --filter relayer start",
+    "relayer:start:prod": "NODE_ENV=production pnpm --filter relayer start",
     "frontend:dev": "pnpm --filter frontend dev",
-    "frontend:build": "pnpm --filter frontend build"
+    "frontend:build": "pnpm --filter frontend build",
+    "frontend:build:prod": "NODE_ENV=production pnpm --filter frontend build",
+    "frontend:preview": "pnpm --filter frontend preview",
+    "health:check": "curl -s http://localhost:3001/health | jq .",
+    "deploy:setup": "cp .env.production .env && pnpm build:prod"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
