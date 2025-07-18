@@ -1,7 +1,11 @@
-import { useState } from 'react'
-import BridgeForm from './components/BridgeForm'
-import FreighterTest from './components/FreighterTest'
+import { useState, useEffect } from 'react'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useFreighter } from './hooks/useFreighter'
+
+// Pages
+import Bridge from './pages/Bridge'
+import Recovery from './pages/Recovery'
+import History from './pages/History'
 
 // Window objeleri için type definitions
 declare global {
@@ -9,6 +13,8 @@ declare global {
     ethereum?: {
       request: (args: { method: string; params?: any[] }) => Promise<any>;
       selectedAddress?: string;
+      on: (event: string, callback: any) => void;
+      removeListener: (event: string, callback: any) => void;
     };
   }
 }
@@ -18,6 +24,7 @@ function App() {
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
+  const location = useLocation();
   
   // Freighter hook usage
   const {
@@ -31,7 +38,6 @@ function App() {
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
-    console.log('MetaMask connect clicked!'); // Debug
     setIsConnecting(true);
     setConnectionError('');
     
@@ -55,7 +61,7 @@ function App() {
     }
   };
 
-  // Freighter bağlantısı - Hook kullanarak
+  // Freighter bağlantısı
   const handleFreighterConnect = async () => {
     try {
       await connectFreighter();
@@ -72,34 +78,60 @@ function App() {
     setShowWalletMenu(false);
   };
 
+  // MetaMask bağlantısını kontrol et
+  useEffect(() => {
+    const checkEthConnection = async () => {
+      if (window.ethereum?.selectedAddress) {
+        setEthAddress(window.ethereum.selectedAddress);
+      }
+    };
+    
+    checkEthConnection();
+  }, []);
+
   const isWalletsConnected = ethAddress && stellarConnected;
   const hasAnyConnection = ethAddress || stellarConnected;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900 text-white">
+    <div className="h-full w-full bg-[#0d111c] text-white flex flex-col">
       {/* Top Navigation */}
-      <nav className="w-full px-6 py-4 flex items-center justify-between border-b border-white/10 backdrop-blur-sm">
+      <nav className="w-full px-6 py-4 flex items-center justify-between border-b border-white/5 backdrop-blur-sm bg-[#0d111c]/80">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">F</span>
-          </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            FusionBridge
-          </span>
+          <Link to="/" className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-lg">F</span>
+            </div>
+            <span className="text-xl font-bold text-white">
+              Fusion+Bridge
+            </span>
+          </Link>
         </div>
         
         <div className="flex items-center gap-4">
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Swap</a>
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Bridge</a>
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Pool</a>
+            <Link 
+              to="/" 
+              className={`transition-colors ${location.pathname === '/' ? 'text-blue-400 font-medium' : 'text-gray-300 hover:text-white'}`}
+            >
+              Bridge & Swap
+            </Link>
+            <Link 
+              to="/history" 
+              className={`transition-colors ${location.pathname === '/history' ? 'text-blue-400 font-medium' : 'text-gray-300 hover:text-white'}`}
+            >
+              History
+            </Link>
           </nav>
           
           {/* Connect Wallet Button */}
           <div className="relative">
             <button 
               onClick={() => setShowWalletMenu(!showWalletMenu)}
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+              className={`${
+                isWalletsConnected 
+                  ? 'bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-500/30' 
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
+              } px-4 py-2 rounded-xl font-medium transition-all duration-200 flex items-center gap-2`}
             >
               {isWalletsConnected ? (
                 <>
@@ -112,7 +144,7 @@ function App() {
                   Partial
                 </>
               ) : (
-                'Connect Wallet'
+                'Connect wallet'
               )}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="transition-transform duration-200" style={{ transform: showWalletMenu ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                 <path d="M7 10l5 5 5-5z"/>
@@ -121,17 +153,17 @@ function App() {
 
             {/* Wallet Dropdown Menu */}
             {showWalletMenu && (
-              <div className="absolute top-full right-0 mt-2 w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl z-[100] p-4">
+              <div className="absolute top-full right-0 mt-2 w-80 glass-effect rounded-xl z-[100] p-4">
                 <h3 className="text-white font-semibold mb-4 text-center">Connect Wallets</h3>
                 
                 {(connectionError || stellarError) && (
-                  <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
-                    <p className="text-red-300 text-sm">{connectionError || stellarError}</p>
+                  <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                    <p className="text-red-400 text-sm">{connectionError || stellarError}</p>
                   </div>
                 )}
 
                 {/* MetaMask */}
-                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
+                <div className="mb-4 p-4 bg-[#131823] rounded-xl border border-white/5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">🦊</span>
@@ -154,14 +186,8 @@ function App() {
                     ) : (
                       <button
                         type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('MetaMask button mousedown');
-                          connectMetaMask();
-                        }}
-                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
-                        style={{ pointerEvents: 'auto' }}
+                        onClick={connectMetaMask}
+                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm border border-orange-500/30"
                       >
                         {isConnecting ? 'Connecting...' : 'Connect'}
                       </button>
@@ -170,7 +196,7 @@ function App() {
                 </div>
 
                 {/* Freighter */}
-                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
+                <div className="mb-4 p-4 bg-[#131823] rounded-xl border border-white/5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">🚀</span>
@@ -193,14 +219,8 @@ function App() {
                     ) : (
                       <button
                         type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('Freighter button mousedown');
-                          handleFreighterConnect();
-                        }}
-                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
-                        style={{ pointerEvents: 'auto' }}
+                        onClick={handleFreighterConnect}
+                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm border border-blue-500/30"
                         disabled={stellarLoading}
                       >
                         {stellarLoading ? 'Connecting...' : 'Connect'}
@@ -224,40 +244,14 @@ function App() {
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <div className="text-center py-12 px-6">
-        <h1 className="text-5xl md:text-6xl font-bold mb-6">
-          <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Cross-chain Swap
-          </span>
-        </h1>
-        <p className="text-xl text-gray-300 mb-2 max-w-2xl mx-auto">
-          Bridge your assets seamlessly between Ethereum and Stellar networks
-        </p>
-        <p className="text-sm text-gray-400 mb-12">
-          Powered by Hash Time Locked Contracts (HTLC) for secure cross-chain transfers
-        </p>
-      </div>
-
       {/* Main Content */}
-      <div className="flex flex-col items-center justify-center px-6 pb-12 gap-8">
-        <BridgeForm 
-          ethAddress={ethAddress} 
-          stellarAddress={stellarAddress || ''}
-        />
-        
-        {/* Test Component */}
-        <FreighterTest />
+      <div className="flex-1">
+        <Routes>
+          <Route path="/" element={<Bridge />} />
+          <Route path="/recovery" element={<Recovery />} />
+          <Route path="/history" element={<History />} />
+        </Routes>
       </div>
-
-      {/* Background Effects */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-      </div>
-
-      {/* Dropdown kapatma için overlay */}
-
     </div>
   );
 }

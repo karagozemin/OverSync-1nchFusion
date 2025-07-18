@@ -3,13 +3,12 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark light;
+  color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #0f172a;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -19,20 +18,146 @@
 }
 
 * {
-  
-  
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
 }
 
 body {
-  margin: 0;
-  padding: 0;
-  min-width: 320px;
   min-height: 100vh;
-  background-color: #0f172a;
+  /* Dark blue/black background similar to 1inch */
+  background-color: #0d111c;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(45, 0, 109, 0.1) 0%, transparent 35%),
+    radial-gradient(circle at 85% 85%, rgba(131, 35, 239, 0.1) 0%, transparent 35%);
+  background-attachment: fixed;
+  background-size: cover;
 }
 
-#root {
-  min-height: 100vh;
-  width: 100%;
+/* Input number styling */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* Glass effect */
+.glass-effect {
+  background: rgba(13, 17, 28, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
+}
+
+/* Flowing border effect */
+.flowing-border {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(31, 38, 135, 0.2) inset;
+  transition: all 0.3s ease;
+}
+
+.flowing-border:hover {
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.6),
+    0 8px 16px rgba(0, 0, 0, 0.4),
+    0 0 50px rgba(31, 38, 135, 0.3) inset;
+  filter: brightness(1.05);
+}
+
+.flowing-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 2px;
+  background: linear-gradient(
+    300deg,
+    #4f46e5,
+    #8b5cf6,
+    #c026d3,
+    #4f46e5
+  );
+  background-size: 300% 300%;
+  animation: border-flow 8s linear infinite;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.flowing-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* Input container hover effect */
+.input-container {
+  transition: all 0.3s ease;
+}
+
+.input-container:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+@keyframes border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.gradient-border {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(to right, #4f46e5, #8b5cf6, #c026d3);
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 } 

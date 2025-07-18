@@ -4,6 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class', // class stratejisi ile dark mode
   theme: {
     extend: {
       fontFamily: {
@@ -17,6 +18,14 @@ export default {
           700: '#1d4ed8',
           900: '#1e3a8a',
         }
+      },
+      backgroundColor: {
+        'dark': '#0f172a', // slate-900
+        'light': '#f8fafc', // slate-50
+      },
+      textColor: {
+        'dark': '#f8fafc', // slate-50
+        'light': '#0f172a', // slate-900
       }
     },
   },
