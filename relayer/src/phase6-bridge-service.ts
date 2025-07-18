@@ -5,7 +5,7 @@
 
 import { EventEmitter } from 'events';
 import { ethers } from 'ethers';
-import { EnhancedStellarBridge, EnhancedBridgeConfig, CrossChainOrderParams, BridgeOrderState, BridgeOrderStatus } from './enhanced-stellar-bridge';
+import { EnhancedStellarBridge, EnhancedBridgeConfig, CrossChainOrderParams, BridgeOrderState, BridgeOrderStatus } from '@fusionbridge/stellar';
 
 /**
  * Phase 6 Bridge Configuration

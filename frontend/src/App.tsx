@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import BridgeForm from './components/BridgeForm'
 import FreighterTest from './components/FreighterTest'
+import DutchAuction from './components/DutchAuction'
+import RecoveryPanel from './components/RecoveryPanel'
+import { AnimatedDarkModeToggle } from './components/DarkModeToggle'
+import { ToastContainer, useToast } from './components/Toast'
 import { useFreighter } from './hooks/useFreighter'
 
 // Window objeleri için type definitions
@@ -18,6 +22,7 @@ function App() {
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'bridge' | 'recovery'>('bridge');
   
   // Freighter hook usage
   const {
@@ -28,6 +33,19 @@ function App() {
     connect: connectFreighter,
     disconnect: disconnectFreighter,
   } = useFreighter();
+
+  // Toast hook
+  const toast = useToast();
+
+  // Dutch Auction state
+  const [auctionData] = useState({
+    initialPrice: 2994.54,
+    endPrice: 2985.12,
+    duration: 300, // 5 minutes
+    startTime: Date.now() / 1000,
+    gasPrice: 25.5,
+    isActive: false
+  });
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
@@ -47,9 +65,11 @@ function App() {
       if (accounts.length > 0) {
         setEthAddress(accounts[0]);
         setShowWalletMenu(false);
+        toast.success('MetaMask Connected!', `Connected to ${accounts[0].slice(0, 8)}...${accounts[0].slice(-6)}`);
       }
     } catch (error: any) {
       setConnectionError(`MetaMask: ${error.message}`);
+      toast.error('Connection Failed', error.message);
     } finally {
       setIsConnecting(false);
     }
@@ -94,6 +114,8 @@ function App() {
             <a href="#" className="text-gray-300 hover:text-white transition-colors">Bridge</a>
             <a href="#" className="text-gray-300 hover:text-white transition-colors">Pool</a>
           </nav>
+          
+          <AnimatedDarkModeToggle />
           
           {/* Connect Wallet Button */}
           <div className="relative">
@@ -239,15 +261,70 @@ function App() {
         </p>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex justify-center mb-8">
+        <div className="flex bg-white/5 backdrop-blur-sm rounded-xl p-1 border border-white/10">
+          <button
+            onClick={() => setActiveTab('bridge')}
+            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'bridge'
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'text-gray-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            Bridge
+          </button>
+          <button
+            onClick={() => setActiveTab('recovery')}
+            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'recovery'
+                ? 'bg-blue-500 text-white shadow-lg'
+                : 'text-gray-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            Recovery
+          </button>
+        </div>
+      </div>
+
       {/* Main Content */}
       <div className="flex flex-col items-center justify-center px-6 pb-12 gap-8">
-        <BridgeForm 
-          ethAddress={ethAddress} 
-          stellarAddress={stellarAddress || ''}
-        />
+        {activeTab === 'bridge' && (
+          <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <BridgeForm 
+                ethAddress={ethAddress} 
+                stellarAddress={stellarAddress || ''}
+              />
+              <FreighterTest />
+            </div>
+            <div className="space-y-6">
+              <DutchAuction
+                initialPrice={auctionData.initialPrice}
+                endPrice={auctionData.endPrice}
+                duration={auctionData.duration}
+                startTime={auctionData.startTime}
+                gasPrice={auctionData.gasPrice}
+                isActive={auctionData.isActive}
+              />
+            </div>
+          </div>
+        )}
         
-        {/* Test Component */}
-        <FreighterTest />
+        {activeTab === 'recovery' && (
+          <div className="w-full max-w-4xl">
+            <RecoveryPanel
+              ethAddress={ethAddress}
+              stellarAddress={stellarAddress || ''}
+              onRecoverySuccess={(orderId) => {
+                toast.success('Recovery Successful!', `Order ${orderId} has been recovered successfully`);
+              }}
+              onRecoveryError={(orderId, error) => {
+                toast.error('Recovery Failed', `Failed to recover order ${orderId}: ${error}`);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Background Effects */}
@@ -257,6 +334,12 @@ function App() {
       </div>
 
       {/* Dropdown kapatma için overlay */}
+      
+      {/* Toast Container */}
+      <ToastContainer 
+        toasts={toast.toasts}
+        onClose={toast.removeToast}
+      />
 
     </div>
   );
