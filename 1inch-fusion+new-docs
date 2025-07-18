@@ -1,0 +1,1982 @@
+1nch fusion+ cross chain swaps dev docs.
+
+***
+
+### 1inch Fusion+ Overview
+
+**1inch Fusion+** is a powerful solution for secure and efficient cross-chain swaps in Decentralized Finance (DeFi). It provides a quick and easy way to exchange assets across different blockchains by utilizing **resolvers** to handle the entire process, simplifying the user experience compared to traditional atomic swaps where both parties must be actively involved. The system uses escrow and hash time locks for security, with the resolver managing everything, including finding the best rates through a gas-sensitive **Dutch auction**.
+
+Key benefits of integrating Fusion+ into your project include:
+*   **Ultimate cross-chain interoperability**: Allows swapping of thousands of assets across all supported chains.
+*   **White-glove user experience**: Once the maker signs the Fusion order, the resolver handles all operations, streamlining the experience.
+*   **Best rates on the market**: The Dutch auction system ensures optimal rates as resolvers compete.
+*   **Increased reliability**: Resolvers step in to complete transactions if needed, ensuring secure finalization.
+*   **Robust security**: Utilizes hashlocks, timelocks, and KYC-compliant resolvers for a secure and compliant swap process.
+
+Fusion+ supports various networks including Ethereum Mainnet, Arbitrum, Avalanche, BNB Chain, Gnosis, Sonic, Optimism, Polygon, and Base, with Solana and zkSync Era also supported for intent-based swaps (Fusion mode).
+
+### Phases of a Fusion+ Swap
+
+A Fusion+ swap typically involves two main participants: the **maker**, who initiates the swap, and the **resolver** (also known as the **taker**), who completes it. The process has three primary phases, with an optional fourth recovery phase if problems arise.
+
+1.  **Phase 1: Announcement**
+    The maker initiates the process by signing a 1inch Fusion+ order and broadcasting it to 1inch, signaling their intent to execute a cross-chain swap. This order is distributed to all resolvers, which triggers a Dutch auction. Resolvers then compete by offering progressively better prices until one locks the order by initiating an escrow on the source chain.
+2.  **Phase 2: Deposit**
+    The winning resolver deposits the maker's assets into an escrow contract on the source chain, and then deposits corresponding assets into an escrow on the destination chain. Both escrows are linked by a secret hash, ensuring assets are unlocked only upon swap completion. A small **safety deposit** is also assigned to each escrow, incentivizing the resolver to successfully complete the order.
+3.  **Phase 3: Withdrawal**
+    After both escrows are verified by the relayer, the secret is revealed, allowing the resolver to unlock the assets on the destination chain for the maker. The resolver then uses the same secret to retrieve their newly acquired assets on the source chain, finalizing the swap.
+4.  **Optional Phase: Recovery**
+    If a swap fails (e.g., a party becomes unresponsive), the protocol includes a recovery mechanism. After the timelock expires, any resolver or participating entity can cancel the swap and return assets to their original owners. The safety deposit in each escrow is transferred to any resolver who completes the swap during this phase.
+
+Fusion+ also supports **partial fills**. For a 100% filled order, a single secret finalizes the transaction. However, for partial fills by different resolvers, a **Merkle tree of secrets** is implemented. This splits the order into equal parts, generating dedicated secrets for each portion. This ensures that each participant can only fill their assigned portion without exposing the rest of the order. For example, if an order is divided into four parts, the first secret is for 25%, the second for 50%, and so on.
+
+### 1inch Fusion+ APIs and SDK
+
+The 1inch API offers superior trade execution, cost savings, and enhanced flexibility compared to other Web3 swap APIs in the DeFi ecosystem. It provides comprehensive aggregation of liquidity sources, gas-cost optimization, user-centric features through intent-based swaps, and robust security.
+
+Here are various API endpoints and SDK methods available for interacting with 1inch Fusion+ orders, complete with their example code snippets.
+
+#### 1. Fusion+ Orders API
+
+The 1inch Fusion+ Orders API allows you to manage and retrieve information about cross-chain swap orders.
+
+**Get cross chain swap active orders**
+This GET endpoint retrieves a list of active cross-chain swap orders. You can paginate the results and filter by source and destination chains.
+
+Parameters:
+*   `page` (query, number): Pagination step, default: 1.
+*   `limit` (query, number): Number of active orders to receive (default: 100, max: 500).
+*   `srcChain` (query, number): Source chain ID.
+*   `dstChain` (query, number): Destination chain ID.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/active";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get actual escrow factory contract address**
+This GET endpoint retrieves the address of the escrow factory contract for a given chain ID.
+
+Parameters:
+*   `chainId` (query, number): Chain ID.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/escrow";
+  const config = {
+    headers: undefined,
+    params: {
+      chainId: "1",
+    },
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get orders by maker address**
+This GET endpoint retrieves orders initiated by a specific maker address. It supports pagination and filtering by timestamps, source/destination tokens, and chain IDs.
+
+Parameters:
+*   `address` (path, string): Maker's address.
+*   `page` (query, number): Pagination step, default: 1.
+*   `limit` (query, number): Number of active orders to receive (default: 100, max: 500).
+*   `timestampFrom` (query, number): Start timestamp in milliseconds for interval [timestampFrom, timestampTo).
+*   `timestampTo` (query, number): End timestamp in milliseconds for interval [timestampFrom, timestampTo).
+*   `srcToken` (query, string): Source token address.
+*   `dstToken` (query, string): Destination token address.
+*   `withToken` (query, string): Find history items by source or destination token.
+*   `dstChainId` (query, number): Destination chain ID.
+*   `srcChainId` (query, number): Source chain ID.
+*   `chainId` (query, number): Chain ID for looking by dstChainId == chainId OR srcChainId == chainId.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/maker/{address}";
+  const config = {
+    headers: undefined,
+    params: {
+      chainId: "1",
+    },
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get all data to perform withdrawal and cancellation**
+This GET endpoint retrieves public secrets and all data necessary to perform a withdrawal or cancellation for a specific order.
+
+Parameters:
+*   `orderHash` (path, string): The hash of the order.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/secrets/{orderHash}";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get idx of each secret that is ready for submission for specific order**
+This GET endpoint returns the indices of secrets that are ready for submission for a specific order, indicating that both escrows are in place and finality locks have passed.
+
+Parameters:
+*   `orderHash` (path, string): The hash of the order.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/ready-to-accept-secret-fills/{orderHash}";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get idx of each secret that is ready for submission for all orders**
+This GET endpoint returns the indices of secrets ready for submission across all orders, indicating that their escrows are in place and finality locks have passed.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/ready-to-accept-secret-fills";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get all data to perform a cancellation or withdrawal on public periods**
+This GET endpoint retrieves all data required to perform a cancellation or withdrawal during public periods.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/ready-to-execute-public-actions";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get order by hash**
+This GET endpoint retrieves the status and details of a specific order by its hash. The order status can be `pending`, `executed`, `expired`, `cancelled`, `refunding`, or `refunded`. It also provides validation details.
+
+Parameters:
+*   `orderHash` (path, string): The hash of the order.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/status/{orderHash}";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get orders by hashes**
+This POST endpoint allows retrieving the status and details for multiple orders by providing an array of their hashes in the request body.
+
+Request Body Schema:
+*   `orderHashes` (array of string): An array of order hashes.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/orders/v1.0/order/status";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  const body = {
+    orderHashes: [
+      "0x10ea5bd12b2d04566e175de24c2df41a058bf16df4af3eb2fb9bff38a9da98e9",
+      "0x20ea5bd12b2d04566e175de24c2df41a058bf16df4af3eb2fb9bff38a9da98e8",
+      "0x30ea5bd12b2d04566e175de24c2df41a058bf16df4af3eb2fb9bff38a9da98e7",
+      "0x40ea5bd12b2d04566e175de24c2df41a058bf16df4af3eb2fb9bff38a9da98e6",
+    ],
+  };
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+#### 2. 1inch Fusion+ Quoter API
+
+The 1inch Fusion+ Quoter API is used to get quote details and build Fusion orders.
+
+**Get quote details based on input data**
+This GET endpoint retrieves quote details, including `srcTokenAmount`, `dstTokenAmount`, and various `presets` (fast, medium, slow, custom) with their auction parameters, gas costs, and secrets count.
+
+Parameters:
+*   `srcChain` (query, number): ID of source chain.
+*   `dstChain` (query, number): ID of destination chain.
+*   `srcTokenAddress` (query, string): Address of "SOURCE" token in source chain.
+*   `dstTokenAddress` (query, string): Address of "DESTINATION" token in destination chain.
+*   `amount` (query, number): Amount to take from "SOURCE" token to get "DESTINATION" token.
+*   `walletAddress` (query, string): Address of the wallet or contract that will create the Fusion order.
+*   `enableEstimate` (query, boolean): If enabled, gets estimation from 1inch swap builder and generates `quoteId` (default: false).
+*   `fee` (query, number): Fee in bps format (1% = 100bps).
+*   `isPermit2` (query, string): permit2 allowance transfer encoded call.
+*   `permit` (query, string): permit, user approval sign.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/quoter/v1.0/quote/receive";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.get(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Get quote with custom preset details**
+This POST endpoint allows retrieving quote details with custom preset configurations. It returns slippage, quoteId, and presets including custom preset details.
+
+Parameters:
+*   `srcChain` (query, number): ID of source chain.
+*   `dstChain` (query, number): ID of destination chain.
+*   `srcTokenAddress` (query, string): Address of "SOURCE" token.
+*   `dstTokenAddress` (query, string): Address of "DESTINATION" token.
+*   `amount` (query, number): Amount to take from "SOURCE" token to get "DESTINATION" token.
+*   `walletAddress` (query, string): Address of the wallet or contract that will create the Fusion order.
+*   `enableEstimate` (query, boolean): If enabled, gets estimation from 1inch swap builder and generates `quoteId` (default: false).
+*   `fee` (query, number): Fee in bps format (1% = 100bps).
+*   `isPermit2` (query, string): permit2 allowance transfer encoded call.
+*   `permit` (query, string): permit, user approval sign.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/quoter/v1.0/quote/receive";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  try {
+    const response = await axios.post(url, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Build order by given quote**
+This POST endpoint is used to build a cross-chain order based on a provided quote. It returns cross-chain order details, including `typedData`, `orderHash`, and `extension`.
+
+Parameters:
+*   `srcChain` (query, number): ID of source chain.
+*   `dstChain` (query, number): ID of destination chain.
+*   `srcTokenAddress` (query, string): Address of "SOURCE" token.
+*   `dstTokenAddress` (query, string): Address of "DESTINATION" token.
+*   `amount` (query, number): Amount to take from "SOURCE" token to get "DESTINATION" token.
+*   `walletAddress` (query, string): Address of the wallet or contract who will create Fusion order.
+*   `fee` (query, number): Fee in bps format, 1% is equal to 100bps.
+*   `source` (query, string): Frontend or some other source selector.
+*   `isPermit2` (query, string): permit2 allowance transfer encoded call.
+*   `isMobile` (query, string): Enabled flag allows to save quote for Mobile History.
+*   `feeReceiver` (query, string): In case fee non zero -> the fee will be transferred to this address.
+*   `permit` (query, string): permit, user approval sign.
+*   `preset` (query, string): fast/medium/slow/custom.
+
+Request Body Schema:
+*   `quote` (object): The quote object obtained from the `Get quote details` endpoint, containing `quoteId`, `srcTokenAmount`, `dstTokenAmount`, `presets`, `timeLocks`, `srcEscrowFactory`, `dstEscrowFactory`, `srcSafetyDeposit`, `dstSafetyDeposit`, `whitelist`, `pubKeys`, `secretsCount`, `recommendedPreset`, `prices`, `volume`, `priceImpactPercent`, `autoK`, `k`, `mxK`.
+*   `secretsHashList` (array of string): List of secret hashes.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/quoter/v1.0/quote/build";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  const body = {
+    quote: {
+      quoteId: "test_test_test",
+      srcTokenAmount: "100000000000000000",
+      dstTokenAmount: "250418225",
+      presets: {
+        fast: {
+          bankFee: "0",
+          auctionDuration: 100,
+          startAuctionIn: 2,
+          initialRateBump: 1000,
+          auctionStartAmount: "250418225",
+          startAmount: "250418225",
+          auctionEndAmount: "250418225",
+          exclusiveResolver: null,
+          costInDstToken: "517184548685636",
+          points: [{
+            delay: 12,
+            rateBump: 455,
+          }, ],
+          allowPartialFills: false,
+          allowMultipleFills: false,
+          gasCost: {
+            gasBumpEstimate: 54,
+            gasPriceEstimate: "1231",
+          },
+        },
+      },
+      timeLocks: {
+        srcWithdrawal: 20,
+        srcPublicWithdrawal: 21,
+        srcCancellation: 22,
+        srcPublicCancellation: 23,
+        dstWithdrawal: 24,
+        dstPublicWithdrawal: 25,
+        dstCancellation: 26,
+      },
+      srcEscrowFactory: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      dstEscrowFactory: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      srcSafetyDeposit: "123",
+      dstSafetyDeposit: "123",
+      whitelist: [
+        "0x1d3b67bca8935cb510c8d18bd45f0b94f54a9681"
+      ],
+      pubKeys: [
+        "0x0454d169b35a0061088d88c00f273f4a2ab603f45077abb2e404b94bff59238c5dfb7eb92ec442a8522ab88b471b7ba2fe9adc304a4ff1696d8afccd99e5e3531a",
+      ],
+      secretsCount: 1,
+      recommendedPreset: "fast",
+      prices: {
+        usd: {
+          srcToken: "2505.44210175",
+          dstToken: "1.0008429148729692",
+        },
+      },
+      volume: {
+        usd: {
+          srcToken: "250.544210175",
+          dstToken: "250.62930624631504754367",
+        },
+      },
+      priceImpactPercent: 0,
+      autoK: 0.1,
+      k: 0.2,
+      mxK: 1,
+    },
+    secretsHashList: [
+      "0x315b47a8c3780434b153667588db4ca628526e20000000000000000000000000",
+    ],
+  };
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+#### 3. 1inch Fusion+ Relayer API
+
+The 1inch Fusion+ Relayer API is a backend service that contains data on Fusion Orders available for filling by resolvers.
+
+**Submit a cross chain order that resolvers will be able to fill**
+This POST endpoint allows a maker to submit a cross-chain order so that resolvers can fill it. It requires the order details, source chain ID, maker's signature, extension data, quote ID, and secret hashes.
+
+Request Body Schema:
+*   `order` (object): Contains `salt`, `makerAsset`, `takerAsset`, `maker`, `receiver`, `makingAmount`, `takingAmount`, `makerTraits`.
+*   `srcChainId` (number): Source chain ID.
+*   `signature` (string): Maker's signature for the order.
+*   `extension` (string): Additional extension data for the order.
+*   `quoteId` (string): Identifier for the quote used to build the order.
+*   `secretHashes` (array of string): Array of secret hashes associated with the order.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/relayer/v1.0/submit";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  const body = {
+    order: {
+      salt: "42",
+      makerAsset: "0x0000000000000000000000000000000000000001",
+      takerAsset: "0x0000000000000000000000000000000000000001",
+      maker: "0x0000000000000000000000000000000000000001",
+      receiver: "0x0000000000000000000000000000000000000001",
+      makingAmount: "100000000000000000000",
+      takingAmount: "100000000000000000000",
+      makerTraits: "0",
+    },
+    srcChainId: 1,
+    signature: "string",
+    extension: "0x",
+    quoteId: "string",
+    secretHashes: ["string"],
+  };
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Submit many cross chain orders that resolvers will be able to fill**
+This POST endpoint allows submitting multiple cross-chain orders for resolvers to fill. The request body is an array of strings, presumably representing order data or hashes.
+
+Request Body Schema:
+*   Array of string.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/relayer/v1.0/submit/many";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  const body = ["string"];
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+**Submit a secret for order fill after SrcEscrow and DstEscrow deployed and DstChain finality lock passed**
+This POST endpoint is used to submit a secret to finalize an order fill after both source and destination escrows have been deployed and the destination chain's finality lock has passed.
+
+Request Body Schema:
+*   `secret` (string): The secret value.
+*   `orderHash` (string): The hash of the order.
+
+Example Code (Node.js):
+```javascript
+const axios = require("axios");
+
+async function httpCall() {
+  const url = "https://api.1inch.dev/fusion-plus/relayer/v1.0/submit/secret";
+  const config = {
+    headers: undefined,
+    params: {},
+    paramsSerializer: {
+      indexes: null,
+    },
+  };
+  const body = {
+    secret: "string",
+    orderHash: "string",
+  };
+  try {
+    const response = await axios.post(url, body, config);
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+}
+```
+
+#### 4. Becoming a Resolver
+
+To become a resolver on the 1inch Network, individuals or companies must complete a **verification procedure**. This process ensures that resolvers are trustworthy and compliant actors, fostering a safe and transparent environment and increasing user confidence. Verification is also necessary for resolvers to receive rewards.
+
+The verification involves completing an **identifying KYC (Know Your Client) or KYB (Know Your Business) questionnaire**. This process is straightforward, requiring answers to questions and uploading basic identifying documents. Resolvers are solely responsible for the accuracy and completeness of the data provided and must inform 1inch of any changes. The amount of information requested may change over time.
+
+Data collected during verification is used to comply with anti-money laundering, anti-terrorist financing, fraud prevention, and sanctions laws. It is securely maintained and disclosed only when legally permitted. **Wallet address screening** using publicly available information is also performed to monitor for potential illicit activities. These verification procedures and screenings are provided by third-party providers, and 1inch disclaims responsibility for their accuracy or services.
+
+Eligibility criteria for resolvers include having the full right and authority to agree to the terms, not being located in prohibited localities or on sanctions lists, not impersonating others or concealing identity (e.g., via VPNs), being a sophisticated user with necessary knowledge, and complying with all applicable laws and regulations. Acting as a resolver is entirely at your own risk. Failure to meet eligibility conditions may result in suspension or termination of resolver status.
+
+In order to become a **Whitelisted Resolver**, you must qualify for the whitelist, which is dynamically maintained based on **Unicorn Power** delegation. To be eligible, a resolver must receive delegations equating to 5% or more of the total Unicorn Power in the network. The whitelist has a maximum limit of ten resolvers. Inclusion on the whitelist is not guaranteed solely by meeting the Unicorn Power threshold; full compliance with terms and successful verification/registration are also required.
+
+Resolvers can also operate as a **Permissioned Proxy**, where eligible resolvers unite their Unicorn Power to meet eligibility criteria for a whitelisted resolver that collects data from other resolvers filling orders. The Permissioned Proxy must ensure that all contributing resolvers comply with the terms and eligibility criteria.
+
+#### 5. Initializing Farm Reward Distribution
+
+As a resolver, offering **farm incentives to delegators** can increase your Unicorn Power balance, which in turn increases your probability of filling orders. Upon registering as a resolver, a farm contract is automatically deployed. You can fetch this farm by interacting with the `dst1inch` contract’s ABI. You can reward delegators with any ERC20 token.
+
+Here's how to initialize and replenish farm reward distribution:
+1.  **Fetch the farm:** Call the `defaultFarms` method on the `dst1inch` contract with your resolver address.
+2.  **Set distributor:** Navigate to the returned farm contract address's "Write Contract" section on Etherscan (this is your farm distribution address) and call the `setDistributor` method using the address that will manage rewards.
+3.  **Add rewards token:** On the same contract, call `addRewardsToken` with the address of the ERC20 token you wish to distribute.
+4.  **Start farming:** Call `startFarming` with the `rewardsToken` address, `amount`, and `period` (both uint256).
+5.  **Replenish:** To add more tokens, call `addRewardsToken` and `startFarming` again.
+
+Example ABI interaction script:
+```javascript
+require("dotenv").config(); //for accessing sensitive information such as private keys, API keys, etc.
+const { Web3 } = require("web3");
+const web3 = new Web3(`Your_ethereum_RPC`); // Please replace `Your_ethereum_RPC` with your actual Ethereum RPC URL.
+const fs = require('fs');
+const dst1inchABI = JSON.parse(fs.readFileSync('dst1inchABI.json', 'utf8'));
+const farmABI = JSON.parse(fs.readFileSync('abi.json', 'utf8'));
+
+// ERC20 ABI fragment (for contract approval)
+const erc20Abi = [{
+  "constant": false,
+  "inputs": [{
+    "name": "spender",
+    "type": "address"
+  }, {
+    "name": "value",
+    "type": "uint256"
+  }],
+  "name": "approve",
+  "outputs": [{
+    "name": "",
+    "type": "bool"
+  }],
+  "payable": false,
+  "stateMutability": "nonpayable",
+  "type": "function"
+}];
+
+const dst1inch = "0xAccfAc2339e16DC80c50d2fa81b5c2B049B4f947";
+const dst1inchContract = new web3.eth.Contract(dst1inchABI, dst1inch);
+const account = 'YOUR_REGISTERED_ADDRESS'; // Please replace `YOUR_REGISTERED_ADDRESS` with your actual registered resolver address.
+const privateKey = 'YOUR_PRIVATE_KEY'; // Please replace `YOUR_PRIVATE_KEY` with your actual private key.
+
+async function distributeFarmingRewards(resolverAddress, newDistributor, rewardsToken, amount, period) {
+  try {
+    // Call defaultFarms with your resolver address
+    const farmAddress = await dst1inchContract.methods.defaultFarms(resolverAddress).call();
+    console.log(`Farm address: ${farmAddress}`);
+    const farmContract = new web3.eth.Contract(farmABI, farmAddress);
+    const tokenContract = new web3.eth.Contract(erc20Abi, rewardsToken);
+
+    // Call setDistributor on the returned farm address
+    const setDistributorTx = {
+      from: resolverAddress,
+      to: farmAddress,
+      data: farmContract.methods.setDistributor(newDistributor).encodeABI(),
+    };
+    const setDistributorSignedTx = await web3.eth.accounts.signTransaction(setDistributorTx, privateKey);
+    await web3.eth.sendSignedTransaction(setDistributorSignedTx.rawTransaction);
+    console.log("Distributor set successfully");
+
+    // Approve the farm contract to spend the tokens
+    const approveTx = {
+      from: newDistributor,
+      to: rewardsToken,
+      data: tokenContract.methods.approve(farmAddress, amount).encodeABI(),
+    };
+    const approveSignedTx = await web3.eth.accounts.signTransaction(approveTx, privateKey);
+    await web3.eth.sendSignedTransaction(approveSignedTx.rawTransaction);
+    console.log("Approval transaction confirmed");
+
+    // Call addRewardsToken with the address of distribution token
+    const addRewardsTokenTx = {
+      from: newDistributor,
+      to: farmAddress,
+      data: farmContract.methods.addRewardsToken(rewardsToken).encodeABI(),
+    };
+    const addRewardsTokenSignedTx = await web3.eth.accounts.signTransaction(addRewardsTokenTx, privateKey);
+    await web3.eth.sendSignedTransaction(addRewardsTokenSignedTx.rawTransaction);
+    console.log("Rewards token added successfully");
+
+    // Call startFarming(address rewardsToken, uint256 amount, uint256 period)
+    const startFarmingTx = {
+      from: newDistributor,
+      to: farmAddress,
+      data: farmContract.methods.startFarming(rewardsToken, amount, period).encodeABI(),
+    };
+    const startFarmingSignedTx = await web3.eth.accounts.signTransaction(startFarmingTx, privateKey);
+    await web3.eth.sendSignedTransaction(startFarmingSignedTx.rawTransaction);
+    console.log("Farming started successfully");
+  } catch (error) {
+    console.error("Error distributing farming rewards:", error);
+  }
+}
+
+const resolverAddress = account;
+const newDistributor = account; // you can use any address as the distributor
+const rewardsToken = '0xRewardsTokenAddress'; // Please replace `0xRewardsTokenAddress` with the actual token address.
+const amount = web3.utils.toWei("Amount", "Token Name"); // Please replace `"Amount"` with the actual amount and `"Token Name"` with the token's unit (e.g., "ether", "gwei").
+const period = 3600; // Period in seconds
+
+distributeFarmingRewards(resolverAddress, newDistributor, rewardsToken, amount, period)
+  .then(() => console.log("Farming rewards distributed successfully"))
+  .catch((error) => console.error("Error distributing farming rewards:", error));
+```
+*Self-correction: The example script for `Initializing farm reward distribution` (sources) contained `Your_ethereum_RPC`, `YOUR_REGISTERED_ADDRESS`, `YOUR_PRIVATE_KEY`, and `0xRewardsTokenAddress` as placeholders. I've added comments to these lines in the code block to inform the user that these are placeholders.*
+
+#### 6. Fusion+ Test Examples
+
+The documentation provides several test examples to demonstrate Fusion+ order processes, including basic single-fill orders, partial fills, and order cancellations.
+
+**Test 1: Basic Fusion+ order (Ethereum USDC -> BSC USDC. Single fill only)**
+This test demonstrates the full lifecycle of a basic Fusion+ order:
+*   **Initialization**: Setting up the environment, including chains, wallets, and contracts.
+*   **Fetching orders**: Although mentioned, the provided example focuses on the order creation and filling process.
+*   **Escrow creation and deposit**: The resolver creates and deposits assets into source and destination chain escrows.
+*   **Escrow verification and withdrawals**: Funds are withdrawn from the escrow after relayer validation, ensuring both resolver and maker receive correct amounts on different chains.
+
+Example Code (Node.js/TypeScript):
+```javascript
+import 'dotenv/config'
+import {
+  expect,
+  jest
+} from '@jest/globals'
+import {
+  createServer,
+  CreateServerReturnType
+} from 'prool'
+import {
+  anvil
+} from 'prool/instances'
+import Sdk from '@1inch/cross-chain-sdk'
+import {
+  computeAddress,
+  ContractFactory,
+  JsonRpcProvider,
+  MaxUint256,
+  parseEther,
+  parseUnits,
+  randomBytes,
+  Wallet as SignerWallet
+} from 'ethers'
+import {
+  uint8ArrayToHex,
+  UINT_40_MAX
+} from '@1inch/byte-utils'
+import assert from 'node:assert'
+import {
+  ChainConfig,
+  config
+} from './config' // Note: 'config' is an external dependency in this example.
+import {
+  Wallet
+} from './wallet' // Note: 'Wallet' is an external dependency in this example.
+import {
+  Resolver
+} from './resolver' // Note: 'Resolver' is an external dependency in this example.
+import {
+  EscrowFactory
+} from './escrow-factory' // Note: 'EscrowFactory' is an external dependency in this example.
+import factoryContract from '../dist/contracts/TestEscrowFactory.sol/TestEscrowFactory.json'
+import resolverContract from '../dist/contracts/Resolver.sol/Resolver.sol/Resolver.json'
+
+const {
+  Address
+} = Sdk
+jest.setTimeout(1000 * 60) // Increase timeout for tests
+
+// Private keys for testing (NEVER EXPOSE YOUR REAL PRIVATE KEY)
+const userPk = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+const resolverPk = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'
+
+describe('Resolving example', () => {
+  const srcChainId = config.chain.source.chainId
+  const dstChainId = config.chain.destination.chainId
+
+  // Define chain-related datatype
+  type Chain = {
+    node ? : CreateServerReturnType | undefined
+    provider: JsonRpcProvider
+    escrowFactory: string
+    resolver: string
+  }
+
+  // Variables for chain and wallet data
+  let src: Chain
+  let dst: Chain
+  let srcChainUser: Wallet
+  let dstChainUser: Wallet
+  let srcChainResolver: Wallet
+  let dstChainResolver: Wallet
+  let srcFactory: EscrowFactory
+  let dstFactory: EscrowFactory
+  let srcResolverContract: Wallet
+  let dstResolverContract: Wallet
+  let srcTimestamp: bigint // Store the current timestamp
+
+  // Utility to increase time on both chains
+  async function increaseTime(t: number): Promise < void > {
+    await Promise.all([src, dst].map((chain) => chain.provider.send('evm_increaseTime', [t])))
+  }
+
+  // Setup before running tests
+  beforeAll(async () => {
+    // Initialize chains
+    [src, dst] = await Promise.all([initChain(config.chain.source), initChain(config.chain.destination)])
+
+    // Initialize wallets
+    srcChainUser = new Wallet(userPk, src.provider)
+    dstChainUser = new Wallet(userPk, dst.provider)
+    srcChainResolver = new Wallet(resolverPk, src.provider)
+    dstChainResolver = new Wallet(resolverPk, dst.provider)
+
+    // Initialize factory contracts
+    srcFactory = new EscrowFactory(src.provider, src.escrowFactory)
+    dstFactory = new EscrowFactory(dst.provider, dst.escrowFactory)
+
+    // Top up user account and approve tokens
+    await srcChainUser.topUpFromDonor(config.chain.source.tokens.USDC.address, config.chain.source.tokens.USDC.donor, parseUnits('1000', 6))
+    await srcChainUser.approveToken(config.chain.source.tokens.USDC.address, config.chain.source.limitOrderProtocol, MaxUint256)
+
+    // Initialize resolver contracts and top up balances
+    srcResolverContract = await Wallet.fromAddress(src.resolver, src.provider)
+    dstResolverContract = await Wallet.fromAddress(dst.resolver, dst.provider)
+    await dstResolverContract.topUpFromDonor(config.chain.destination.tokens.USDC.address, config.chain.destination.tokens.USDC.donor, parseUnits('2000', 6))
+    await dstChainResolver.transfer(dst.resolver, parseEther('1'))
+    await dstResolverContract.unlimitedApprove(config.chain.destination.tokens.USDC.address, dst.escrowFactory)
+
+    // Store the current timestamp from the source chain
+    srcTimestamp = BigInt((await src.provider.getBlock('latest'))!.timestamp)
+  })
+
+  // Retrieve balances for maker and resolver on both chains
+  async function getBalances(srcToken: string, dstToken: string): Promise < {
+    src: {
+      user: bigint;
+      resolver: bigint
+    };
+    dst: {
+      user: bigint;
+      resolver: bigint
+    }
+  } > {
+    return {
+      src: {
+        user: await srcChainUser.tokenBalance(srcToken),
+        resolver: await srcResolverContract.tokenBalance(srcToken)
+      },
+      dst: {
+        user: await dstChainUser.tokenBalance(dstToken),
+        resolver: await dstResolverContract.tokenBalance(dstToken)
+      }
+    }
+  }
+
+  // Test suite for filling an order
+  describe('Fill', () => {
+    // Swapping USDC between Ethereum and BSC
+    it('should swap Ethereum USDC -> Bsc USDC. Single fill only', async () => {
+      const initialBalances = await getBalances(
+        config.chain.source.tokens.USDC.address,
+        config.chain.destination.tokens.USDC.address
+      )
+
+      // Create a cross-chain order
+      const secret = uint8ArrayToHex(randomBytes(32))
+      const order = Sdk.CrossChainOrder.new(
+        new Address(src.escrowFactory), {
+          salt: Sdk.randBigInt(1000n),
+          maker: new Address(await srcChainUser.getAddress()),
+          makingAmount: parseUnits('100', 6),
+          takingAmount: parseUnits('99', 6),
+          makerAsset: new Address(config.chain.source.tokens.USDC.address),
+          takerAsset: new Address(config.chain.destination.tokens.USDC.address),
+        }, {
+          hashLock: Sdk.HashLock.forSingleFill(secret),
+          timeLocks: Sdk.TimeLocks.new({
+            srcWithdrawal: 10n,
+            srcPublicWithdrawal: 120n,
+            srcCancellation: 121n,
+            srcPublicCancellation: 122n,
+            dstWithdrawal: 10n,
+            dstPublicWithdrawal: 100n,
+            dstCancellation: 101n
+          }),
+          srcChainId,
+          dstChainId,
+          srcSafetyDeposit: parseEther('0.001'),
+          dstSafetyDeposit: parseEther('0.001'),
+        }, {
+          auction: new Sdk.AuctionDetails({
+            initialRateBump: 0,
+            points: [],
+            duration: 120n,
+            startTime: srcTimestamp
+          }),
+          whitelist: [{
+            address: new Address(src.resolver),
+            allowFrom: 0n
+          }],
+          resolvingStartTime: 0n,
+        }, {
+          nonce: Sdk.randBigInt(UINT_40_MAX),
+          allowPartialFills: false,
+          allowMultipleFills: false
+        }
+      )
+
+      // Sign the order and calculate its hash
+      const signature = await srcChainUser.signOrder(srcChainId, order);
+      const orderHash = order.getOrderHash(srcChainId);
+
+      // Initialize resolver contract and log the order fill process
+      const resolverContract = new Resolver(src.resolver, dst.resolver);
+      console.log(`[${srcChainId}]`, `Filling order ${orderHash}`);
+
+      // Fill the order on the source chain
+      const fillAmount = order.makingAmount;
+      const {
+        txHash: orderFillHash,
+        blockHash: srcDeployBlock
+      } = await srcChainResolver.send(
+        resolverContract.deploySrc(
+          srcChainId,
+          order,
+          signature,
+          Sdk.TakerTraits.default().setExtension(order.extension).setAmountMode(Sdk.AmountMode.maker).setAmountThreshold(order.takingAmount),
+          fillAmount,
+        ),
+      );
+      console.log(`[${srcChainId}]`, `Order ${orderHash} filled for ${fillAmount} in tx ${orderFillHash}`, );
+
+      // Handle event and deposit on the destination chain
+      const srcEscrowEvent = await srcFactory.getSrcDeployEvent(srcDeployBlock);
+      const dstImmutables = srcEscrowEvent.withComplement(srcEscrowEvent).withTaker(
+        new Address(resolverContract.dstAddress)
+      );
+      console.log(`[${dstChainId}]`, `Depositing ${dstImmutables.amount} for order ${orderHash}`, );
+      const {
+        txHash: dstDepositHash,
+        blockTimestamp: dstDeployedAt
+      } = await dstChainResolver.send(resolverContract.deployDst(dstImmutables));
+      console.log(`[${dstChainId}]`, `Created dst deposit for order ${orderHash} in tx ${dstDepositHash}`, );
+
+      // Retrieve and calculate escrow contract addresses
+      const ESCROW_SRC_IMPLEMENTATION = await srcFactory.getSourceImpl();
+      const ESCROW_DST_IMPLEMENTATION = await dstFactory.getDestinationImpl();
+      const srcEscrowAddress = new Sdk.EscrowFactory(
+        new Address(src.escrowFactory),
+      ).getSrcEscrowAddress(srcEscrowEvent, ESCROW_SRC_IMPLEMENTATION);
+      const dstEscrowAddress = new Sdk.EscrowFactory(
+        new Address(dst.escrowFactory),
+      ).getDstEscrowAddress(
+        srcEscrowEvent,
+        srcEscrowEvent,
+        dstDeployedAt,
+        new Address(resolverContract.dstAddress),
+        ESCROW_DST_IMPLEMENTATION,
+      );
+
+      // Escrow verification and withdrawals
+      await increaseTime(11); // User shares secret after validation of dst escrow deployment
+      console.log(`[${dstChainId}]`, `Withdrawing funds for user from ${dstEscrowAddress}`, );
+      await dstChainResolver.send(
+        resolverContract.withdraw(
+          "dst",
+          dstEscrowAddress,
+          secret,
+          dstImmutables.withDeployedAt(dstDeployedAt),
+        ),
+      );
+      console.log(`[${srcChainId}]`, `Withdrawing funds for resolver from ${srcEscrowAddress}`, );
+      const {
+        txHash: resolverWithdrawHash
+      } = await srcChainResolver.send(
+        resolverContract.withdraw("src", srcEscrowAddress, secret, srcEscrowEvent),
+      );
+      console.log(
+        `[${srcChainId}]`,
+        `Withdrew funds for resolver from ${srcEscrowAddress} to ${src.resolver} in tx ${resolverWithdrawHash}`,
+      );
+
+      const resultBalances = await getBalances(
+        config.chain.source.tokens.USDC.address,
+        config.chain.destination.tokens.USDC.address,
+      );
+
+      // User transferred funds to resolver on source chain
+      expect(initialBalances.src.user - resultBalances.src.user).toBe(order.makingAmount, );
+      expect(resultBalances.src.resolver - initialBalances.src.resolver).toBe(order.makingAmount, );
+
+      // Resolver transferred funds to user on destination chain
+      expect(resultBalances.dst.user - initialBalances.dst.user).toBe(order.takingAmount, );
+      expect(initialBalances.dst.resolver - resultBalances.dst.resolver).toBe(order.takingAmount, );
+    });
+  });
+});
+```
+
+**Test 2: Partial fill order (Ethereum USDC -> BSC USDC. Multiple fills)**
+This test demonstrates how to handle orders that are filled partially using multiple secrets and a Merkle tree approach.
+
+Example Code (Node.js/TypeScript - Creating and Filling the order parts):
+```javascript
+// Partial fills - Creating the order
+it("should swap Ethereum USDC -> Bsc USDC. Multiple fills. Fill 100%", async () => {
+  const initialBalances = await getBalances(
+    config.chain.source.tokens.USDC.address,
+    config.chain.destination.tokens.USDC.address
+  );
+
+  // User creates order with 11 secrets (10 parts)
+  // note: use a cryptographically secure random number for real-life scenarios
+  const secrets = Array.from({
+    length: 11
+  }).map(() => uint8ArrayToHex(randomBytes(32)));
+  const secretHashes = secrets.map((s) => Sdk.HashLock.hashSecret(s));
+  const leaves = Sdk.HashLock.getMerkleLeaves(secrets);
+  const order = Sdk.CrossChainOrder.new(
+    new Address(src.escrowFactory), {
+      salt: Sdk.randBigInt(1000n),
+      maker: new Address(await srcChainUser.getAddress()),
+      makingAmount: parseUnits("100", 6),
+      takingAmount: parseUnits("99", 6),
+      makerAsset: new Address(config.chain.source.tokens.USDC.address),
+      takerAsset: new Address(config.chain.destination.tokens.USDC.address),
+    }, {
+      hashLock: Sdk.HashLock.forMultipleFills(leaves),
+      timeLocks: Sdk.TimeLocks.new({
+        srcWithdrawal: 10n, // 10s finality lock for test
+        srcPublicWithdrawal: 120n, // 2m for private withdrawal
+        srcCancellation: 121n, // 1sec public withdrawal
+        srcPublicCancellation: 122n, // 1sec private cancellation
+        dstWithdrawal: 10n, // 10s finality lock for test
+        dstPublicWithdrawal: 100n, // 100sec private withdrawal
+        dstCancellation: 101n // 1sec public withdrawal
+      }),
+      srcChainId,
+      dstChainId,
+      srcSafetyDeposit: parseEther("0.001"),
+      dstSafetyDeposit: parseEther("0.001"),
+    }, {
+      auction: new Sdk.AuctionDetails({
+        initialRateBump: 0,
+        points: [],
+        duration: 120n,
+        startTime: srcTimestamp
+      }),
+      whitelist: [{
+        address: new Address(src.resolver),
+        allowFrom: 0n
+      }],
+      resolvingStartTime: 0n,
+    }, {
+      nonce: Sdk.randBigInt(UINT_40_MAX),
+      allowPartialFills: true,
+      allowMultipleFills: true
+    }
+  );
+  const signature = await srcChainUser.signOrder(srcChainId, order);
+  const orderHash = order.getOrderHash(srcChainId);
+
+  // Filling the order
+  const resolverContract = new Resolver(src.resolver, dst.resolver);
+  console.log(`[${srcChainId}]`, `Filling order ${orderHash}`);
+  const fillAmount = order.makingAmount;
+  const idx = secrets.length - 1; // last index to fulfill
+  const {
+    txHash: orderFillHash,
+    blockHash: srcDeployBlock
+  } = await srcChainResolver.send(
+    resolverContract.deploySrc(
+      srcChainId,
+      order,
+      signature,
+      Sdk.TakerTraits.default().setExtension(order.extension).setInteraction(
+        new Sdk.EscrowFactory(new Address(src.escrowFactory)).getMultipleFillInteraction(
+          Sdk.HashLock.getProof(leaves, idx),
+          idx,
+          secretHashes[idx]
+        )
+      ).setAmountMode(Sdk.AmountMode.maker).setAmountThreshold(order.takingAmount),
+      fillAmount,
+      Sdk.HashLock.fromString(secretHashes[idx])
+    )
+  );
+  console.log(`[${srcChainId}]`, `Order ${orderHash} filled for ${fillAmount} in tx ${orderFillHash}`);
+
+  const srcEscrowEvent = await srcFactory.getSrcDeployEvent(srcDeployBlock);
+  const dstImmutables = srcEscrowEvent.withComplement(srcEscrowEvent).withTaker(
+    new Address(resolverContract.dstAddress)
+  );
+  console.log(`[${dstChainId}]`, `Depositing ${dstImmutables.amount} for order ${orderHash}`);
+  const {
+    txHash: dstDepositHash,
+    blockTimestamp: dstDeployedAt
+  } = await dstChainResolver.send(resolverContract.deployDst(dstImmutables));
+  console.log(`[${dstChainId}]`, `Created dst deposit for order ${orderHash} in tx ${dstDepositHash}`);
+
+  const secret = secrets[idx];
+  const ESCROW_SRC_IMPLEMENTATION = await srcFactory.getSourceImpl();
+  const ESCROW_DST_IMPLEMENTATION = await dstFactory.getDestinationImpl();
+  const srcEscrowAddress = new Sdk.EscrowFactory(new Address(src.escrowFactory)).getSrcEscrowAddress(
+    srcEscrowEvent,
+    ESCROW_SRC_IMPLEMENTATION
+  );
+  const dstEscrowAddress = new Sdk.EscrowFactory(new Address(dst.escrowFactory)).getDstEscrowAddress(
+    srcEscrowEvent,
+    srcEscrowEvent,
+    dstDeployedAt,
+    new Address(resolverContract.dstAddress),
+    ESCROW_DST_IMPLEMENTATION
+  );
+
+  await increaseTime(11); // finality lock passed
+  // User shares secret after validation of dst escrow deployment
+  console.log(`[${dstChainId}]`, `Withdrawing funds for user from ${dstEscrowAddress}`);
+  await dstChainResolver.send(
+    resolverContract.withdraw("dst", dstEscrowAddress, secret, dstImmutables.withDeployedAt(dstDeployedAt))
+  );
+  console.log(`[${srcChainId}]`, `Withdrawing funds for resolver from ${srcEscrowAddress}`);
+  const {
+    txHash: resolverWithdrawHash
+  } = await srcChainResolver.send(
+    resolverContract.withdraw("src", srcEscrowAddress, secret, srcEscrowEvent)
+  );
+  console.log(
+    `[${srcChainId}]`,
+    `Withdrew funds for resolver from ${srcEscrowAddress} to ${src.resolver} in tx ${resolverWithdrawHash}`
+  );
+
+  const resultBalances = await getBalances(
+    config.chain.source.tokens.USDC.address,
+    config.chain.destination.tokens.USDC.address
+  );
+
+  // User transferred funds to resolver on the source chain
+  expect(initialBalances.src.user - resultBalances.src.user).toBe(order.makingAmount);
+  expect(resultBalances.src.resolver - initialBalances.src.resolver).toBe(order.makingAmount);
+
+  // Resolver transferred funds to user on destination chain
+  expect(resultBalances.dst.user - initialBalances.dst.user).toBe(order.takingAmount);
+  expect(initialBalances.dst.resolver - resultBalances.dst.resolver).toBe(order.takingAmount);
+});
+```
+
+**Test 3: Order cancellation or public withdrawal**
+This test shows how to cancel an order by creating a new order with a hash lock and managing the withdrawal process.
+
+Example Code (Node.js/TypeScript - Partial example):
+```javascript
+// ---- Order cancellation ----
+describe('Cancel', () => {
+  it('should cancel swap Ethereum USDC -> Bsc USDC', async () => {
+    const initialBalances = await getBalances(
+      config.chain.source.tokens.USDC.address,
+      config.chain.destination.tokens.USDC.address
+    )
+    // User creates order
+    // note: use a cryptographically secure random number for real-life scenarios
+    const hashLock = Sdk.HashLock.forSingleFill(uint8ArrayToHex(randomBytes(32)))
+    const order = Sdk.CrossChainOrder.new(
+      new Address(src.escrowFactory), {
+        salt: Sdk.randBigInt(1000n),
+        maker: new Address(await srcChainUser.getAddress()),
+        makingAmount: parseUnits('100', 6),
+        takingAmount: parseUnits('99', 6),
+        makerAsset: new Address(config.chain.source.tokens.USDC.address),
+        takerAsset: new Address(config.chain.destination.tokens.USDC.address),
+      }, {
+        hashLock,
+        timeLocks: Sdk.TimeLocks.new({
+          srcWithdrawal: 0n, // no finality lock for test
+          srcPublicWithdrawal: 120n, // (partial code block from source)
+```
+
+#### 7. Fusion+ SDK for Integrators
+
+The 1inch Fusion+ SDK provides high-level functionality for working with Fusion+.
+
+**Initialization**
+To initialize the SDK, you need to provide the URL for the Fusion+ API and an authentication key. You can also specify custom `blockchainProvider` and `httpProvider` connectors.
+
+Example Code (Node.js):
+```javascript
+import {
+  SDK,
+  NetworkEnum
+} from "@1inch/cross-chain-sdk";
+
+async function main() {
+  const sdk = new SDK({
+    url: "https://api.1inch.dev/fusion-plus",
+    authKey: "your-auth-key",
+  });
+  const orders = await sdk.getActiveOrders({
+    page: 1,
+    limit: 2
+  });
+}
+main();
+```
+
+**`getActiveOrders`**
+This method is used to get a list of active orders. It takes `PaginationParams` as an argument.
+
+Example Code (Node.js):
+```javascript
+import {
+  SDK,
+  NetworkEnum
+} from "@1inch/cross-chain-sdk";
+
+const sdk = new SDK({
+  url: "https://api.1inch.dev/fusion-plus",
+  authKey: "your-auth-key",
+});
+const orders = await sdk.getActiveOrders({
+  page: 1,
+  limit: 2
+});
+```
+
+**`getOrdersByMaker`**
+This method is used to get orders by a specific maker. It takes `PaginationParams` and an `address` string as arguments.
+
+Example Code (Node.js):
+```javascript
+import {
+  SDK,
+  NetworkEnum
+} from "@1inch/cross-chain-sdk";
+
+const sdk = new FusionSDK({ // Note: original example used FusionSDK, but SDK is correct.
+  url: "https://api.1inch.dev/fusion-plus",
+  authKey: "your-auth-key",
+});
+const orders = await sdk.getOrdersByMaker({
+  page: 1,
+  limit: 2,
+  address: "0xfa80cd9b3becc0b4403b0f421384724f2810775f",
+});
+```
+
+**`getQuote`**
+This method is used to get quote details based on input data. It takes `QuoteParams` as an argument, including source/destination chain IDs, token addresses, amount, wallet address, and optional parameters like `enableEstimate`, `fee`, `isPermit2`, and `permit`.
+
+Example Code (Node.js):
+```javascript
+import {
+  SDK,
+  NetworkEnum,
+  QuoteParams
+} from "@1inch/cross-chain-sdk";
+
+const sdk = new FusionSDK({ // Note: original example used FusionSDK, but SDK is correct.
+  url: "https://api.1inch.dev/fusion-plus",
+  authKey: "your-auth-key",
+});
+const params = {
+  srcChainId: NetworkEnum.ETHEREUM,
+  dstChainId: NetworkEnum.GNOSIS,
+  srcTokenAddress: "0x6b175474e89094c44da98b954eedeac495271d0f",
+  dstTokenAddress: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  amount: "1000000000000000000000",
+  walletAddress: "0x123....",
+};
+const quote = await sdk.getQuote(params);
+```
+
+**`createOrder`**
+This method is used to create a cross-chain order based on a given quote. It requires the quote object and order parameters, including `walletAddress`, `hashLock`, and `secretHashes`.
+
+Example Code (Node.js):
+```javascript
+import {
+  getRandomBytes32,
+  SDK,
+  HashLock,
+  PrivateKeyProviderConnector,
+  NetworkEnum,
+} from "@1inch/cross-chain-sdk";
+import Web3 from 'web3'; // Assuming web3 is installed as a dependency
+import { solidityPackedKeccak256 } from 'ethers'; // Assuming ethers is installed for this utility
+
+const makerPrivateKey = "0x123...."; // Please replace `0x123....` with maker's actual private key
+const makerAddress = "0x123...."; // Please replace `0x123....` with maker's actual address
+const nodeUrl = "...."; // Please replace `....` with a valid node URL
+const blockchainProvider = new PrivateKeyProviderConnector(makerPrivateKey, new Web3(nodeUrl), );
+
+const sdk = new SDK({
+  url: "https://api.1inch.dev/fusion-plus",
+  authKey: "your-auth-key",
+  blockchainProvider,
+});
+
+const params = {
+  srcChainId: NetworkEnum.ETHEREUM,
+  dstChainId: NetworkEnum.GNOSIS,
+  srcTokenAddress: "0x6b175474e89094c44da98b954eedeac495271d0f",
+  dstTokenAddress: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  amount: "1000000000000000000000",
+  enableEstimate: true,
+  walletAddress: makerAddress,
+};
+
+const quote = await sdk.getQuote(params);
+
+const secretsCount = quote.getPreset().secretsCount;
+const secrets = Array.from({
+  length: secretsCount
+}).map(() => getRandomBytes32(), );
+const secretHashes = secrets.map((x) => HashLock.hashSecret(x));
+const hashLock =
+  secretsCount === 1 ?
+  HashLock.forSingleFill(secrets) :
+  HashLock.forMultipleFills(
+    secretHashes.map(
+      (secretHash, i) =>
+      solidityPackedKeccak256(["uint64", "bytes32"], [i, secretHash.toString()], ),
+    ) as (string & {
+      _tag: "MerkleLeaf";
+    })[],
+  );
+
+sdk.createOrder(quote, {
+  walletAddress: makerAddress,
+  hashLock,
+  secretHashes,
+  // fee is an optional field
+  fee: {
+    takingFeeBps: 100, // 1% as we use bps format, 1% is equal to 100bps
+    takingFeeReceiver: "0x0000000000000000000000000000000000000000", // fee receiver address
+  },
+}, ).then(console.log);
+```
+*Self-correction: The example script for `createOrder` (sources) contained `0x123....` and `....` as placeholders. I've added comments to these lines in the code block to inform the user that these are placeholders. Also added missing `Web3` import and `solidityPackedKeccak256` import based on common usage of the SDK.*
+
+#### 8. When and how to submit a secret (SDK methods)
+
+Submitting a secret is a crucial step in finalizing a Fusion+ swap.
+
+**How to submit a secret:**
+1.  **Wait for finality lock and escrow creation:** After escrows are created on both source and destination chains, the finality lock period must expire before the secret is shared. Use `getReadyToAcceptSecretFills(orderHash)` to check if the secret can be submitted.
+    ```javascript
+    async getReadyToAcceptSecretFills(orderHash: string): Promise<ReadyToAcceptSecretFills> {
+      return this.api.getReadyToAcceptSecretFills(orderHash);
+    }
+    ```
+2.  **Check if the order is ready for public actions:** Call `getReadyToExecutePublicActions()` to verify if the system is ready to perform public actions, including secret submission.
+    ```javascript
+    async getReadyToExecutePublicActions(): Promise<ReadyToExecutePublicActions> {
+      return this.api.getReadyToExecutePublicActions();
+    }
+    ```
+3.  **Verify if a secret has already been published:** Use `getPublishedSecrets(orderHash)` to check if other resolvers have already revealed secrets. If a valid secret is published, further action may not be needed.
+    ```javascript
+    async getPublishedSecrets(orderHash: string): Promise<PublishedSecretsResponse> {
+      return this.api.getPublishedSecrets(orderHash);
+    }
+    ```
+4.  **Ensure the secret is ready:** The maker must securely store the secret and be ready to provide it after finality lock expiration.
+5.  **Submit the secret:** Use `submitSecret(orderHash, secret)` to submit the secret. This secret will unlock escrows and finalize the swap.
+    ```javascript
+    async submitSecret(orderHash: string, secret: string): Promise<void> {
+      return this.api.submitSecret(orderHash, secret);
+    }
+    ```
+6.  **Verify successful submission:** After submission, use `getOrderStatus(orderHash)` to check the order status. A successful submission allows resolvers to complete the swap and release funds.
+
+#### 9. Fusion+ SDK for Resolvers
+
+The Fusion SDK provides tools specifically for resolvers, including auction calculation, and working with auction parameters and WebSocket API for order monitoring.
+
+**Auction Calculator**
+This method is used to calculate the taker amount and auction rate.
+
+*   **`static AuctionCalculator.fromLimitOrderV3Struct`**: Creates an auction instance from a limit order structure.
+    Example (Node.js):
+    ```javascript
+    import {
+      AuctionCalculator
+    } from "@1inch/fusion-sdk";
+
+    const limitOrderStruct = {
+      allowedSender: "0x0000000000000000000000000000000000000000",
+      interactions: "0x000c004e200000000000000000219ab540356cbb839cbe05303d7705faf486570009",
+      maker: "0x00000000219ab540356cbb839cbe05303d7705fa",
+      makerAsset: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      makingAmount: "1000000000000000000",
+      offsets: "0",
+      receiver: "0x0000000000000000000000000000000000000000",
+      salt: "45118768841948961586167738353692277076075522015101619148498725069326976558864",
+      takerAsset: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      takingAmount: "1420000000",
+    };
+    const calculator = AuctionCalculator.fromLimitOrderV3Struct(limitOrderStruct); // #=> AuctionCalculator instance
+    const rate = calculator.calcRateBump(1673548209); // #=> 14285
+    const auctionTakingAmount = calculator.calcAuctionTakingAmount("1420000000", rate, ); // #=> '1422028470'
+    ```
+*   **`AuctionCalculator.calcRateBump`**: Calculates the exchange rate at a specific point in time (Unix timestamp).
+*   **`AuctionCalculator.calcAuctionTakingAmount`**: Calculates the taker amount.
+*   **`AuctionCalculator.fromAuctionData`**: Creates an `AuctionCalculator` instance from a suffix and salt.
+    Example (Node.js):
+    ```javascript
+    import {
+      AuctionSuffix,
+      AuctionSalt,
+      AuctionCalculator,
+    } from "@1inch/fusion-sdk";
+
+    const suffix = AuctionSuffix.decode("0x000c004e200000000000000000219ab540356cbb839cbe05303d7705faf486570009", );
+    const salt = AuctionSalt.decode("45118768841948961586167738353692277076075522015101619148498725069326976558864", );
+    AuctionCalculator.fromAuctionData(suffix, salt); // #=> AuctionCalculator instance
+    ```
+
+**Auction Salt**
+Auction salt parameters include auction start time, duration, initial rate bump, taker fee, and an optional salt to control entropy.
+
+*   Example 1 (Node.js):
+    ```javascript
+    import {
+      AuctionSalt
+    } from '@1inch/fusion-sdk'
+    const salt = new AuctionSalt({
+      duration: 180, // in seconds,
+      auctionStartTime: 1673548149, // Unix timestamp,
+      initialRateBump: 50000, // difference between max and min amount in percents, 10000000 = 100%
+      bankFee: '0' // in wei
+    })
+    salt.build() // #=> '45118768841948961586167738353692277076075522015101619148498725069326976549864'
+    ```
+*   Example 2: Using an optional parameter to control entropy (Node.js):
+    ```javascript
+    import {
+      AuctionSalt
+    } from '@1inch/fusion-sdk'
+    // your random generated string
+    const saltString = myCustomRandFunction() // Note: `myCustomRandFunction()` is a placeholder for a user-defined function.
+    const salt = new AuctionSalt({
+      duration: 180, // in seconds,
+      auctionStartTime: 1673548149, // Unix timestamp,
+      initialRateBump: 50000, // 10000000 = 100%
+      bankFee: '0', // in wei,
+      salt: saltString
+    })
+    salt.build()
+    ```
+*   **`static AuctionSalt.decode`**: Decodes a salt string into an `AuctionSalt` object.
+    Example (Node.js):
+    ```javascript
+    import {
+      AuctionSalt
+    } from "@1inch/fusion-sdk";
+    const salt = AuctionSalt.decode("45118768841948961586167738353692277076075522015101619148498725069326976549864", ); // #=> AuctionSalt
+    ```
+
+**Auction Suffix**
+The auction suffix contains details about auction points (rate coefficients and delays), a whitelist of resolvers and their allowances, public resolving deadlines, and optional taker fee receivers and ratios.
+
+*   Example (Node.js):
+    ```javascript
+    import {
+      AuctionSuffix
+    } from "@1inch/fusion-sdk";
+    const suffix = new AuctionSuffix({
+      points: [{
+        coefficient: 20000,
+        delay: 12,
+      }, ],
+      whitelist: [{
+        address: "0x00000000219ab540356cbb839cbe05303d7705fa",
+        allowance: 0,
+      }, ],
+    });
+    suffix.build(); // #=> '000c004e200000000000000000219ab540356cbb839cbe05303d7705faf486570009'
+    ```
+*   **`static AuctionSuffix.decode`**: Decodes an interactions string (encoded suffix) into an `AuctionSuffix` object.
+    Example (Node.js):
+    ```javascript
+    import {
+      AuctionSuffix
+    } from "@1inch/fusion-sdk";
+    const encodedSuffix = "000c004e200000000000000000219ab540356cbb839cbe05303d7705fa63c0566a09";
+    const suffix = AuctionSuffix.decode(encodedSuffix);
+    suffix.build(); // #=> '000c004e200000000000000000219ab540356cbb839cbe05303d7705fa63c0566a09'
+    ```
+
+**Websocket API**
+The WebSocket API provides a high-level overview of working with 1inch Fusion+ orders in real-time.
+
+*   **Creation with a constructor**
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const wsSdk = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+      authKey: "your-auth-key",
+    });
+    wsSdk.order.onOrder((data) => {
+      console.log("received order event", data);
+    });
+    ```
+*   **Creation with a custom provider**
+    ```javascript
+    import {
+      WsProviderConnector,
+      WebSocketApi
+    } from "@1inch/fusion-sdk";
+
+    class MyFancyProvider implements WsProviderConnector {
+      // ... user implementation
+      get(url) {
+        // Implement get method
+        throw new Error("Method not implemented.");
+      }
+      post(url, data) {
+        // Implement post method
+        throw new Error("Method not implemented.");
+      }
+      connect() {
+        // Implement connect method
+        throw new Error("Method not implemented.");
+      }
+      disconnect() {
+        // Implement disconnect method
+        throw new Error("Method not implemented.");
+      }
+      send(data) {
+        // Implement send method
+        throw new Error("Method not implemented.");
+      }
+      on(event, listener) {
+        // Implement on method
+        throw new Error("Method not implemented.");
+      }
+      off(event, listener) {
+        // Implement off method
+        throw new Error("Method not implemented.");
+      }
+    }
+    const url = "wss://api.1inch.dev/fusion/ws/v2.0/1";
+    const provider = new MyFancyProvider({
+      url
+    }); // Note: MyFancyProvider needs actual implementation.
+    const wsSdk = new WebSocketApi(provider);
+    ```
+*   **Creation with a new static method**
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/cross-chain-sdk";
+
+    const ws = WebSocketApi.new({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ```
+*   **Creation with lazy initialization**
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/cross-chain-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+      lazyInit: true,
+    });
+    ws.init();
+    ```
+
+**Base methods for WebSocketApi:**
+
+*   **`on(event: string, cb: Function)`**: Subscribes to any event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    // Assuming WebSocketEvent enum is defined elsewhere or imported
+    const WebSocketEvent = {
+      Error: "error",
+      Open: "open",
+      Message: "message"
+    };
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.on(WebSocketEvent.Error, console.error);
+    ws.on(WebSocketEvent.Open, function open() {
+      ws.send("something");
+    });
+    ws.on(WebSocketEvent.Message, function message(data) {
+      console.log("received: %s", data);
+    });
+    ```
+*   **`off(event: string, cb: Function)`**: Unsubscribes from an event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    // Assuming WebSocketEvent enum is defined elsewhere or imported
+    const WebSocketEvent = {
+      Error: "error",
+      Open: "open",
+      Message: "message"
+    };
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.on(WebSocketEvent.Error, console.error);
+    ws.on(WebSocketEvent.Open, function open() {
+      ws.send("something");
+    });
+
+    function message(data) {
+      console.log("received: %s", data);
+    }
+    ws.on(WebSocketEvent.Message, message);
+    ws.off(WebSocketEvent.Message, message);
+    ```
+*   **`onOpen(cb: Function)`**: Subscribes to the open event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.onOpen(() => {
+      console.log("connection is opened");
+    });
+    ```
+*   **`send(message: any)`**: Sends an event to the backend.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.send("my message");
+    ```
+*   **`close()`**: Closes the connection.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.close();
+    ```
+*   **`onMessage(cb: (data: any) => void)`**: Subscribes to a message event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.onMessage((data) => {
+      console.log("message received", data);
+    });
+    ```
+*   **`onClose(cb: Function)`**: Subscribes to a close event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.onClose(() => {
+      console.log("connection is closed");
+    });
+    ```
+*   **`onError(cb: (error: any) => void)`**: Subscribes to an error event.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.onError((error) => {
+      console.log("error is received", error);
+    });
+    ```
+
+**Order namespace methods for WebSocketApi:**
+
+*   **`onOrder(cb: (data: OrderEventType) => void)`**: Subscribes to all order events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrder((data) => {
+      if (data.event === "order_created") {
+        // do something
+      }
+      if (data.event === "order_invalid") {
+        // do something
+      }
+    });
+    ```
+*   **`onOrderCreated(cb: (data: OrderCreatedEvent) => void)`**: Subscribes specifically to `order_created` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderCreated((data) => {
+      // do something
+    });
+    ```
+*   **`onOrderInvalid(cb: (data: OrderInvalidEvent) => void)`**: Subscribes to `order_invalid` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderInvalid((data) => {
+      // do something
+    });
+    ```
+*   **`onOrderBalanceOrAllowanceChange(cb: (data: OrderBalanceOrAllowanceChangeEvent) => void)`**: Subscribes to `order_balance_or_allowance_change` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderBalanceOrAllowanceChange((data) => {
+      // do something
+    });
+    ```
+*   **`onOrderFilled(cb: (data: OrderFilledEvent) => void)`**: Subscribes to `order_filled` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderFilled((data) => {
+      // do something
+    });
+    ```
+*   **`onOrderFilledPartially(cb: (data: OrderFilledPartiallyEvent) => void)`**: Subscribes to `order_filled_partially` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderFilledPartially((data) => {
+      // do something
+    });
+    ```
+*   **`onOrderCancelled(cb: (data: OrderCancelledEvent) => void)`**: Subscribes to `order_cancelled` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.order.onOrderCancelled((data) => {
+      // do something
+    });
+    ```
+
+**RPC namespace methods for WebSocketApi:**
+
+*   **`onPong(cb: (data: string) => void)`**: Subscribes to ping responses.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.onPong((data) => {
+      // do something
+    });
+    ```
+*   **`ping()`**: Sends a health check ping.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.ping();
+    ```
+*   **`getAllowedMethods()`**: Gets the list of allowed methods.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.getAllowedMethods();
+    ```
+*   **`onGetAllowedMethods(cb: (data: RpcMethod[]) => void)`**: Subscribes to `getAllowedMethods` responses.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.onGetAllowedMethods((data) => {
+      // do something
+    });
+    ```
+*   **`getActiveOrders()`**: Gets the list of active orders via RPC.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.getActiveOrders();
+    ```
+*   **`onGetActiveOrders(cb: (data: PaginationOutput<ActiveOrder>) => void)`**: Subscribes to `getActiveOrders` events.
+    Example (Node.js):
+    ```javascript
+    import {
+      WebSocketApi,
+      NetworkEnum
+    } from "@1inch/fusion-sdk";
+
+    const ws = new WebSocketApi({
+      url: "wss://api.1inch.dev/fusion/ws",
+      network: NetworkEnum.ETHEREUM,
+    });
+    ws.rpc.onGetActiveOrders((data) => {
+      // do something
+    });
+    ```
+
+***
