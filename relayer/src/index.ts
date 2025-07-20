@@ -1112,14 +1112,13 @@ app.post('/api/orders/process', async (req, res) => {
     try {
       // Dynamic import Stellar SDK with better error handling
       console.log('🔗 Loading Stellar SDK...');
-      const StellarSdkModule = await import('@stellar/stellar-sdk');
-      const StellarSdk = StellarSdkModule.default || StellarSdkModule;
+      const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = await import('@stellar/stellar-sdk');
       
       // Setup Stellar server (testnet)
-      const server = new StellarSdk.Server('https://horizon-testnet.stellar.org');
+      const server = new Horizon.Server('https://horizon-testnet.stellar.org');
       
       // Relayer Stellar keys (from environment)
-      const relayerKeypair = StellarSdk.Keypair.fromSecret(
+      const relayerKeypair = Keypair.fromSecret(
         process.env.RELAYER_STELLAR_SECRET || 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       );
       
@@ -1138,19 +1137,19 @@ app.post('/api/orders/process', async (req, res) => {
       console.log('💰 XLM amount to send:', xlmAmount);
       
       // Create payment transaction
-      const payment = StellarSdk.Operation.payment({
+      const payment = Operation.payment({
         destination: userStellarAddress,
-        asset: StellarSdk.Asset.native(), // XLM
+        asset: Asset.native(), // XLM
         amount: xlmAmount
       });
       
       // Build transaction
-      const transaction = new StellarSdk.TransactionBuilder(relayerAccount, {
-        fee: StellarSdk.BASE_FEE,
-        networkPassphrase: StellarSdk.Networks.TESTNET
+      const transaction = new TransactionBuilder(relayerAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET
       })
         .addOperation(payment)
-        .addMemo(StellarSdk.Memo.text(`Bridge:${orderId.substring(0, 20)}`))
+        .addMemo(Memo.text(`Bridge:${orderId.substring(0, 20)}`))
         .setTimeout(300)
         .build();
       
