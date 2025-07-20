@@ -133,6 +133,10 @@ async function initializeRelayer() {
   console.log('🔄 Initializing FusionBridge Relayer Service');
   console.log('============================================');
   
+  // Configure Express middleware
+  app.use(cors());
+  app.use(express.json());
+  
   // Validate configuration
   validateConfig();
   
@@ -182,6 +186,308 @@ async function initializeRelayer() {
     process.exit(1);
   }
   
+  // ===== ORDERS API ENDPOINTS =====
+  
+  // Constants
+  const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
+  const HTLC_CONTRACT_ADDRESS = process.env.HTLC_CONTRACT_ADDRESS || '0x088370cBc9b5aB4Cd1f5ed21e621959f6f0b1C25';
+  
+  // Global order storage (in production this would be a database)
+  const activeOrders = new Map();
+
+  // POST /api/orders/create - Create bridge order (Frontend Integration)
+  console.log("📍 DEBUG: About to register orders endpoint");
+  
+  // Root route first
+  app.get('/', (req, res) => {
+    res.json({ message: 'FusionBridge Relayer API', status: 'running' });
+  });
+  
+  // Simple test endpoints
+  app.get('/test', (req, res) => {
+    res.json({ message: 'ROOT test working!', timestamp: new Date().toISOString() });
+  });
+  app.get('/api/test', (req, res) => {
+    res.json({ message: 'API endpoints are working!', timestamp: new Date().toISOString() });
+  });
+  console.log('📍 DEBUG: Test endpoints registered (root + api)');
+  
+  app.post('/api/orders/create', async (req, res) => {
+    try {
+      const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction } = req.body;
+      
+      // Validate required fields
+      if (!fromChain || !toChain || !fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          required: ['fromChain', 'toChain', 'fromToken', 'toToken', 'amount', 'ethAddress', 'stellarAddress']
+        });
+      }
+
+      console.log('🌉 Creating bridge order:', {
+        direction,
+        fromChain,
+        toChain,
+        fromToken,
+        toToken,
+        amount,
+        ethAddress,
+        stellarAddress
+      });
+
+      // Generate order ID
+      const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      
+      // For ETH to XLM direction, create HTLC order on Ethereum
+      if (direction === 'eth_to_xlm') {
+        
+        // Generate HTLC parameters
+        const secretBytes = new Uint8Array(32);
+        crypto.getRandomValues(secretBytes);
+        const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        const hashLock = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        
+        const orderData = {
+          orderId,
+          token: '0x0000000000000000000000000000000000000000', // ETH
+          amount: (parseFloat(amount) * 1e18).toString(),
+          hashLock,
+          timelock: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+          feeRate: 100, // 1%
+          beneficiary: stellarAddress,
+          refundAddress: ethAddress,
+          destinationChainId: 1, // Stellar represented as 1
+          stellarTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          partialFillEnabled: false,
+          secret: secret,
+          created: new Date().toISOString(),
+          status: 'pending_user_confirmation'
+        };
+
+        // Store order
+        activeOrders.set(orderId, {
+          ...orderData,
+          ethAddress,
+          stellarAddress,
+          amount
+        });
+
+        console.log('✅ ETH→XLM Order created:', orderId);
+        console.log('💾 Order stored with addresses:', {
+          ethAddress,
+          stellarAddress
+        });
+
+        // Return approval transaction data for MetaMask
+        res.json({
+          success: true,
+          orderId,
+          orderData,
+          approvalTransaction: {
+            to: HTLC_CONTRACT_ADDRESS,
+            value: `0x${BigInt(orderData.amount).toString(16)}`,
+            data: '0x',
+            gas: '0x5208',
+            gasPrice: '0x4a817c800'
+          },
+          message: 'Order created! Please approve the escrow deposit.',
+          nextStep: 'Approve deposit, then relayer will create HTLC contract',
+          instructions: [
+            '1. Approve escrow deposit transaction',
+            '2. Relayer will automatically create HTLC contract',
+            '3. Cross-chain swap will begin'
+          ]
+        });
+        
+      } else if (direction === 'xlm_to_eth') {
+        // For XLM to ETH direction, create order on Stellar first
+        
+        const orderData = {
+          orderId,
+          stellarAmount: (parseFloat(amount) * 1e7).toString(), // XLM has 7 decimals
+          targetAmount: (parseFloat(amount) / 10000 * 1e18).toString(), // Convert to ETH
+          ethAddress,
+          stellarAddress,
+          created: new Date().toISOString(),
+          status: 'pending_stellar_transaction'
+        };
+        
+        // Store order
+        activeOrders.set(orderId, orderData);
+
+        console.log('✅ XLM→ETH Order created:', orderId);
+        
+        res.json({
+          success: true,
+          orderId,
+          orderData,
+          message: 'Bridge order created successfully',
+          nextStep: 'Please confirm the Stellar transaction in Freighter'
+        });
+        
+      } else {
+        throw new Error('Invalid direction specified');
+      }
+
+    } catch (error) {
+      console.error('❌ Bridge order creation failed:', error);
+      res.status(500).json({
+        error: 'Bridge order creation failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // POST /api/orders/process - Process approved order (Stellar transaction)
+  app.post('/api/orders/process', async (req, res) => {
+    try {
+      const { orderId, txHash, stellarTxHash, stellarAddress } = req.body;
+      
+      if (!orderId) {
+        return res.status(400).json({
+          error: 'Order ID is required'
+        });
+      }
+
+      console.log('🌟 Processing approved order:', { orderId, txHash, stellarTxHash });
+      
+      // Get stored order
+      const storedOrder = activeOrders.get(orderId);
+      if (!storedOrder) {
+        return res.status(404).json({
+          error: 'Order not found',
+          orderId
+        });
+      }
+
+      // Use stored addresses
+      const userStellarAddress = storedOrder.stellarAddress || stellarAddress;
+      const userEthAddress = storedOrder.ethAddress;
+      const orderAmount = storedOrder.amount;
+
+      console.log('📋 Processing order with stored data:', {
+        userStellarAddress,
+        userEthAddress, 
+        orderAmount
+      });
+
+      // Dynamic import Stellar SDK with better error handling
+      try {
+        console.log('🔗 Loading Stellar SDK...');
+        const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = await import('@stellar/stellar-sdk');
+        
+        // Setup Stellar server (testnet)
+        const server = new Horizon.Server('https://horizon-testnet.stellar.org');
+        
+        // Relayer Stellar keys (from environment)
+        const relayerKeypair = Keypair.fromSecret(
+          process.env.RELAYER_STELLAR_SECRET || 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+        );
+        
+        console.log('🔗 Connecting to Stellar testnet...');
+        const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
+        console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
+
+        // Calculate XLM amount to send (convert ETH amount to XLM)
+        const xlmAmount = (parseFloat(orderAmount || '0.001') * ETH_TO_XLM_RATE).toFixed(7);
+        
+        console.log('🎯 Sending to user address:', userStellarAddress);
+        console.log('💰 XLM amount to send:', xlmAmount);
+        
+        // Create payment transaction
+        const payment = Operation.payment({
+          destination: userStellarAddress,
+          asset: Asset.native(), // XLM
+          amount: xlmAmount
+        });
+        
+        // Build transaction
+        const transaction = new TransactionBuilder(relayerAccount, {
+          fee: BASE_FEE,
+          networkPassphrase: Networks.TESTNET
+        })
+          .addOperation(payment)
+          .addMemo(Memo.text(`Bridge:${orderId.substring(0, 20)}`))
+          .setTimeout(300)
+          .build();
+        
+        // Sign transaction
+        transaction.sign(relayerKeypair);
+        console.log('📝 Transaction signed');
+        console.log('💫 Sending XLM to:', userStellarAddress);
+        
+        // Submit to network
+        const result = await server.submitTransaction(transaction);
+        console.log('✅ Stellar transaction successful!');
+        console.log('🔍 Transaction hash:', result.hash);
+        console.log('🌐 View on StellarExpert: https://stellar.expert/explorer/testnet/tx/' + result.hash);
+        
+        // Update order status
+        storedOrder.status = 'completed';
+        storedOrder.stellarTxHash = result.hash;
+        
+        // Successful response
+        res.json({
+          success: true,
+          orderId,
+          stellarTxId: result.hash,
+          message: 'Cross-chain swap completed successfully!',
+          details: {
+            ethereum: {
+              txHash: txHash,
+              status: 'confirmed'
+            },
+            stellar: {
+              txId: result.hash,
+              amount: `${xlmAmount} XLM`,
+              destination: userStellarAddress,
+              status: 'completed'
+            }
+          }
+        });
+
+      } catch (stellarError: any) {
+        console.error('❌ Stellar transaction failed:', stellarError);
+        console.log('Error details:', stellarError.message);
+        
+        // Fallback to mock response
+        const mockTxId = `mock_stellar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        console.log('🔄 Falling back to mock transaction:', mockTxId);
+        
+        const xlmAmount = (parseFloat(orderAmount || '0.001') * ETH_TO_XLM_RATE).toFixed(7);
+        
+        res.json({
+          success: true,
+          orderId,
+          stellarTxId: mockTxId,
+          message: 'Cross-chain swap completed (mock mode)',
+          error: stellarError.message,
+          details: {
+            ethereum: {
+              status: 'confirmed'
+            },
+            stellar: {
+              txId: mockTxId,
+              amount: `${xlmAmount} XLM`,
+              destination: userStellarAddress,
+              status: 'mock_processing',
+              error: 'Stellar transaction failed, using mock'
+            }
+          }
+        });
+      }
+
+    } catch (error: any) {
+      console.error('❌ Order processing failed:', error);
+      res.status(500).json({
+        error: 'Order processing failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+  
+  console.log('📍 DEBUG: Orders endpoints registered successfully');
+  
   // Start HTTP server
   const server = app.listen(RELAYER_CONFIG.port, () => {
     console.log(`🌐 HTTP server started on port ${RELAYER_CONFIG.port}`);
@@ -210,10 +516,8 @@ async function gracefulShutdown() {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Create Express app
+// Create Express app globally
 const app = express();
-app.use(cors());
-app.use(express.json());
 
 // ===== PHASE 4: EVENT SYSTEM INITIALIZATION =====
 
@@ -950,877 +1254,11 @@ app.post('/presets/optimize', async (req, res) => {
   }
 });
 
-// ===== ORDERS API ENDPOINTS =====
-
-// Global order storage (in production this would be a database)
-const activeOrders = new Map();
-
-// POST /api/orders/create - Create bridge order (Frontend Integration)
-app.post('/api/orders/create', async (req, res) => {
-  try {
-    const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction } = req.body;
-    
-    // Validate required fields
-    if (!fromChain || !toChain || !fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
-      return res.status(400).json({
-        error: 'Missing required fields',
-        required: ['fromChain', 'toChain', 'fromToken', 'toToken', 'amount', 'ethAddress', 'stellarAddress']
-      });
-    }
-
-    console.log('🌉 Creating bridge order:', {
-      direction,
-      fromChain,
-      toChain,
-      fromToken,
-      toToken,
-      amount,
-      ethAddress,
-      stellarAddress
-    });
-
-    // Generate order ID
-    const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    
-    // For ETH to XLM direction, create HTLC order on Ethereum
-    if (direction === 'eth_to_xlm') {
-      
-      // Generate HTLC parameters
-      const secretBytes = new Uint8Array(32);
-      crypto.getRandomValues(secretBytes);
-      const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-      const hashLock = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-      
-      const orderData = {
-        orderId,
-        token: '0x0000000000000000000000000000000000000000', // ETH
-        amount: (parseFloat(amount) * 1e18).toString(),
-        hashLock,
-        timelock: Math.floor(Date.now() / 1000) + 3600, // 1 hour
-        feeRate: 100, // 1%
-        beneficiary: stellarAddress,
-        refundAddress: ethAddress,
-        destinationChainId: 1, // Stellar (mock)
-        stellarTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
-        partialFillEnabled: false,
-        secret,
-        created: new Date().toISOString(),
-        status: 'pending_user_confirmation'
-      };
-      
-      // Store order with user addresses
-      activeOrders.set(orderId, {
-        ...orderData,
-        ethAddress,
-        stellarAddress,
-        direction,
-        fromToken,
-        toToken,
-        originalAmount: amount
-      });
-      
-      console.log('✅ ETH→XLM Order created:', orderId);
-      console.log('💾 Order stored with addresses:', { ethAddress, stellarAddress });
-      
-      // Return user approval transaction (simple ETH transfer for approval)
-      const approvalTxData = {
-        to: process.env.RELAYER_ETHEREUM_ADDRESS || '0x742d35Cc6634C0532925a3b8D400e1e4dff7D88e', // Relayer address for escrow
-        value: `0x${(BigInt(orderData.amount) + BigInt('1000000000000000')).toString(16)}`, // amount + 0.001 ETH safety deposit
-        data: '0x',
-        gas: '0x5208', // 21000 gas for simple transfer
-        gasPrice: '0x4a817c800' // 20 gwei
-      };
-      
-      res.json({
-        success: true,
-        orderId,
-        orderData,
-        approvalTransaction: approvalTxData,
-        message: 'Order created! Please approve the escrow deposit.',
-        nextStep: 'Approve deposit, then relayer will create HTLC contract',
-        instructions: [
-          '1. Approve escrow deposit transaction',
-          '2. Relayer will automatically create HTLC contract',
-          '3. Cross-chain swap will begin'
-        ]
-      });
-      
-    } else if (direction === 'xlm_to_eth') {
-      // For XLM to ETH direction, create order on Stellar first
-      
-      const orderData = {
-        orderId,
-        stellarAmount: (parseFloat(amount) * 1e7).toString(), // XLM has 7 decimals
-        targetAmount: (parseFloat(amount) / 10000 * 1e18).toString(), // Convert to ETH
-        ethAddress,
-        stellarAddress,
-        created: new Date().toISOString(),
-        status: 'pending_stellar_transaction'
-      };
-      
-      console.log('✅ XLM→ETH Order created:', orderId);
-      
-      res.json({
-        success: true,
-        orderId,
-        orderData,
-        message: 'Bridge order created successfully',
-        nextStep: 'Please confirm the Stellar transaction in Freighter'
-      });
-      
-    } else {
-      throw new Error('Invalid direction specified');
-    }
-
-  } catch (error) {
-    console.error('❌ Bridge order creation failed:', error);
-    res.status(500).json({
-      error: 'Bridge order creation failed',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
+// Start relayer (always initialize when module loads)
+initializeRelayer().catch(error => {
+  console.error('❌ Failed to initialize relayer:', error);
+  process.exit(1);
 });
-
-// POST /api/orders/process - Process approved order (Stellar transaction)
-app.post('/api/orders/process', async (req, res) => {
-  try {
-    const { orderId, txHash } = req.body;
-    
-    if (!orderId) {
-      return res.status(400).json({
-        error: 'Order ID is required'
-      });
-    }
-
-    console.log('🌟 Processing approved order:', { orderId, txHash });
-    
-    // Get stored order
-    const storedOrder = activeOrders.get(orderId);
-    if (!storedOrder) {
-      return res.status(404).json({
-        error: 'Order not found',
-        orderId
-      });
-    }
-    
-    console.log('📋 Found stored order:', {
-      stellarAddress: storedOrder.stellarAddress,
-      ethAddress: storedOrder.ethAddress,
-      amount: storedOrder.originalAmount
-    });
-    
-    try {
-      // Dynamic import Stellar SDK with better error handling
-      console.log('🔗 Loading Stellar SDK...');
-      const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = await import('@stellar/stellar-sdk');
-      
-      // Setup Stellar server (testnet)
-      const server = new Horizon.Server('https://horizon-testnet.stellar.org');
-      
-      // Relayer Stellar keys (from environment)
-      const relayerKeypair = Keypair.fromSecret(
-        process.env.RELAYER_STELLAR_SECRET || 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      );
-      
-      console.log('🔗 Connecting to Stellar testnet...');
-      console.log('🤖 Relayer Stellar address:', relayerKeypair.publicKey());
-      
-      // Get relayer account info
-      const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
-      console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
-      
-      // Use user's real Stellar address from stored order
-      const userStellarAddress = storedOrder.stellarAddress;
-      const xlmAmount = (parseFloat(storedOrder.originalAmount) * 10000).toFixed(7); // ETH to XLM conversion rate
-      
-      console.log('🎯 Sending to user address:', userStellarAddress);
-      console.log('💰 XLM amount to send:', xlmAmount);
-      
-      // Create payment transaction
-      const payment = Operation.payment({
-        destination: userStellarAddress,
-        asset: Asset.native(), // XLM
-        amount: xlmAmount
-      });
-      
-      // Build transaction
-      const transaction = new TransactionBuilder(relayerAccount, {
-        fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET
-      })
-        .addOperation(payment)
-        .addMemo(Memo.text(`Bridge:${orderId.substring(0, 20)}`))
-        .setTimeout(300)
-        .build();
-      
-      // Sign transaction
-      transaction.sign(relayerKeypair);
-      console.log('📝 Transaction signed');
-      console.log('💫 Sending XLM to:', userStellarAddress);
-      
-      // Submit to network
-      const result = await server.submitTransaction(transaction);
-      
-      console.log('✅ Stellar transaction successful!');
-      console.log('🔍 Transaction hash:', result.hash);
-      console.log('🌐 View on StellarExpert:', `https://stellar.expert/explorer/testnet/tx/${result.hash}`);
-      
-      // Mark order as completed
-      storedOrder.status = 'completed';
-      storedOrder.stellarTxHash = result.hash;
-      storedOrder.completedAt = new Date().toISOString();
-      
-      res.json({
-        success: true,
-        orderId,
-        stellarTxId: result.hash,
-        stellarExplorer: `https://stellar.expert/explorer/testnet/tx/${result.hash}`,
-        message: 'Cross-chain swap completed successfully!',
-        details: {
-          ethereum: {
-            approvalTx: txHash,
-            status: 'confirmed'
-          },
-          stellar: {
-            txId: result.hash,
-            amount: xlmAmount + ' XLM',
-            destination: userStellarAddress,
-            status: 'confirmed',
-            memo: `Bridge:${orderId.substring(0, 20)}`
-          }
-        }
-      });
-      
-    } catch (stellarError: any) {
-      console.error('❌ Stellar transaction failed:', stellarError);
-      console.error('Error details:', stellarError.response?.data || stellarError.message);
-      
-      // Fallback to mock if Stellar fails
-      const mockStellarTxId = `mock_stellar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      console.log('🔄 Falling back to mock transaction:', mockStellarTxId);
-      
-      res.json({
-        success: true,
-        orderId,
-        stellarTxId: mockStellarTxId,
-        message: 'Cross-chain swap completed (mock mode)',
-        error: stellarError.message,
-        details: {
-          ethereum: {
-            approvalTx: txHash,
-            status: 'confirmed'
-          },
-          stellar: {
-            txId: mockStellarTxId,
-            amount: (parseFloat(storedOrder.originalAmount) * 10000).toFixed(7) + ' XLM',
-            destination: storedOrder.stellarAddress,
-            status: 'mock_processing',
-            error: 'Stellar transaction failed, using mock'
-          }
-        }
-      });
-    }
-    
-  } catch (error) {
-    console.error('❌ Order processing failed:', error);
-    res.status(500).json({
-      error: 'Order processing failed',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// GET /order/active - Get active orders
-app.get('/order/active', async (req, res) => {
-  try {
-    const { page, limit, srcChain, dstChain } = req.query as any;
-    
-    const result = ordersService.getActiveOrders(
-      page ? parseInt(page) : undefined,
-      limit ? parseInt(limit) : undefined,
-      srcChain ? parseInt(srcChain) : undefined,
-      dstChain ? parseInt(dstChain) : undefined
-    );
-    
-    res.json(result);
-    console.log(`📋 Active orders retrieved: ${result.items.length} items`);
-  } catch (error) {
-    console.error('❌ Failed to get active orders:', error);
-    res.status(500).json(createErrorResponse('Failed to get active orders', getErrorMessage(error)));
-  }
-});
-
-// GET /order/escrow - Get escrow factory
-app.get('/order/escrow', async (req, res) => {
-  try {
-    const { chainId } = req.query as any;
-    
-    if (!chainId) {
-      return res.status(400).json(createErrorResponse('chainId is required'));
-    }
-
-    const result = ordersService.getEscrowFactory(parseInt(chainId));
-    res.json(result);
-  } catch (error) {
-    console.error('❌ Failed to get escrow factory:', error);
-    res.status(500).json(createErrorResponse('Failed to get escrow factory', getErrorMessage(error)));
-  }
-});
-
-// GET /order/maker/:address - Get orders by maker
-app.get('/order/maker/:address', async (req, res) => {
-  try {
-    const { address } = req.params;
-    const { page, limit } = req.query as any;
-    
-    const result = ordersService.getOrdersByMaker(
-      address,
-      page ? parseInt(page) : undefined,
-      limit ? parseInt(limit) : undefined
-    );
-    
-    res.json(result);
-    console.log(`📋 Orders by maker ${address}: ${result.items.length} items`);
-  } catch (error) {
-    console.error('❌ Failed to get orders by maker:', error);
-    res.status(500).json(createErrorResponse('Failed to get orders by maker', getErrorMessage(error)));
-  }
-});
-
-// GET /order/secrets/:orderHash - Get order secrets
-app.get('/order/secrets/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getOrderSecrets(orderHash);
-    
-    if (!result) {
-      return res.status(404).json(createErrorResponse('Order not found'));
-    }
-    
-    res.json(result);
-    console.log(`🔐 Secrets retrieved for order: ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get order secrets:', error);
-    res.status(500).json(createErrorResponse('Failed to get order secrets', error.message));
-  }
-});
-
-// GET /order/status/:orderHash - Get order status
-app.get('/order/status/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getOrderStatus(orderHash);
-    res.json(result);
-    
-    console.log(`📊 Status retrieved for order: ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get order status:', error);
-    res.status(500).json(createErrorResponse('Failed to get order status', error.message));
-  }
-});
-
-// POST /order/status - Get multiple order statuses
-app.post('/order/status', async (req, res) => {
-  try {
-    const { orderHashes } = req.body;
-    
-    if (!Array.isArray(orderHashes)) {
-      return res.status(400).json(createErrorResponse('orderHashes must be an array'));
-    }
-    
-    const result = ordersService.getOrderStatuses(orderHashes);
-    res.json(result);
-    
-    console.log(`📊 Multiple statuses retrieved for ${orderHashes.length} orders`);
-  } catch (error) {
-    console.error('❌ Failed to get order statuses:', error);
-    res.status(500).json(createErrorResponse('Failed to get order statuses', error.message));
-  }
-});
-
-// ===== RELAYER API ENDPOINTS =====
-
-// POST /submit - Submit single order (renamed from /create-htlc)
-app.post('/submit', async (req, res) => {
-  try {
-    const signedOrder = req.body as SignedOrderInput;
-    
-    // Validate required fields
-    if (!signedOrder.order || !signedOrder.signature || !signedOrder.srcChainId) {
-      return res.status(400).json(createErrorResponse('Missing required fields', 'order, signature, and srcChainId are required'));
-    }
-
-    // Add order to orders service
-    const orderHash = ordersService.addOrder(signedOrder);
-    
-    res.json(createSuccessResponse({
-      orderHash,
-      message: 'Order submitted successfully'
-    }));
-
-    console.log('✅ Order submitted:', orderHash);
-  } catch (error) {
-    console.error('❌ Order submission failed:', error);
-    res.status(500).json(createErrorResponse('Order submission failed', error.message));
-  }
-});
-
-// POST /submit/many - Submit multiple orders
-app.post('/submit/many', async (req, res) => {
-  try {
-    const { orders } = req.body;
-    
-    if (!Array.isArray(orders)) {
-      return res.status(400).json(createErrorResponse('orders must be an array'));
-    }
-
-    const results = orders.map(order => {
-      try {
-        const orderHash = ordersService.addOrder(order);
-        return { success: true, orderHash };
-      } catch (error) {
-        return { success: false, error: getErrorMessage(error) };
-      }
-    });
-
-    res.json({ results });
-    console.log(`✅ Multiple orders submitted: ${results.filter(r => r.success).length}/${results.length} successful`);
-  } catch (error) {
-    console.error('❌ Multiple order submission failed:', error);
-    res.status(500).json(createErrorResponse('Multiple order submission failed', error.message));
-  }
-});
-
-// POST /submit/secret - Submit secret
-app.post('/submit/secret', async (req, res) => {
-  try {
-    const secretInput = req.body as SecretInput;
-    
-    if (!secretInput.secret || !secretInput.orderHash) {
-      return res.status(400).json(createErrorResponse('secret and orderHash are required'));
-    }
-
-    const result = ordersService.submitSecret(secretInput);
-    
-    res.json(createSuccessResponse({
-      submitted: result,
-      message: 'Secret submitted successfully'
-    }));
-
-    console.log('🔐 Secret submitted for order:', secretInput.orderHash);
-  } catch (error) {
-    console.error('❌ Secret submission failed:', error);
-    res.status(500).json(createErrorResponse('Secret submission failed', error.message));
-  }
-});
-
-// ===== PARTIAL FILLS API ENDPOINTS (1inch Fusion+ Compliant) =====
-
-// GET /order/ready-to-accept-secret-fills/:orderHash - Get ready secrets for specific order
-app.get('/order/ready-to-accept-secret-fills/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getReadyToAcceptSecretFills(orderHash);
-    res.json(result);
-    
-    console.log(`📋 Ready to accept secret fills for order ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get ready secret fills:', error);
-    res.status(500).json(createErrorResponse('Failed to get ready secret fills', getErrorMessage(error)));
-  }
-});
-
-// GET /order/ready-to-accept-secret-fills - Get ready secrets for all orders
-app.get('/order/ready-to-accept-secret-fills', async (req, res) => {
-  try {
-    const result = ordersService.getAllReadyToAcceptSecretFills();
-    res.json(result);
-    
-    console.log('📋 Ready to accept secret fills for all orders retrieved');
-  } catch (error) {
-    console.error('❌ Failed to get ready secret fills:', error);
-    res.status(500).json(createErrorResponse('Failed to get ready secret fills', getErrorMessage(error)));
-  }
-});
-
-// GET /order/secrets/:orderHash - Get published secrets for order
-app.get('/order/secrets/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getPublishedSecrets(orderHash);
-    res.json(result);
-    
-    console.log(`🔐 Published secrets retrieved for order ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get published secrets:', error);
-    res.status(500).json(createErrorResponse('Failed to get published secrets', getErrorMessage(error)));
-  }
-});
-
-// GET /order/status/:orderHash - Get order status
-app.get('/order/status/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getOrderStatus(orderHash);
-    res.json(result);
-    
-    console.log(`📊 Order status retrieved for ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get order status:', error);
-    res.status(500).json(createErrorResponse('Failed to get order status', getErrorMessage(error)));
-  }
-});
-
-// POST /order/status - Get multiple order statuses
-app.post('/order/status', async (req, res) => {
-  try {
-    const { orderHashes } = req.body;
-    
-    if (!Array.isArray(orderHashes)) {
-      return res.status(400).json(createErrorResponse('orderHashes must be an array'));
-    }
-    
-    const results = ordersService.getMultipleOrderStatuses(orderHashes);
-    res.json(results);
-    
-    console.log(`📊 Multiple order statuses retrieved: ${orderHashes.length} orders`);
-  } catch (error) {
-    console.error('❌ Failed to get multiple order statuses:', error);
-    res.status(500).json(createErrorResponse('Failed to get multiple order statuses', getErrorMessage(error)));
-  }
-});
-
-// GET /order/ready-to-execute-public-actions - Get orders ready for public actions
-app.get('/order/ready-to-execute-public-actions', async (req, res) => {
-  try {
-    const result = ordersService.getReadyToExecutePublicActions();
-    res.json(result);
-    
-    console.log('🔓 Ready to execute public actions retrieved');
-  } catch (error) {
-    console.error('❌ Failed to get ready public actions:', error);
-    res.status(500).json(createErrorResponse('Failed to get ready public actions', getErrorMessage(error)));
-  }
-});
-
-// POST /submit/partial-fill - Submit partial fill execution
-app.post('/submit/partial-fill', async (req, res) => {
-  try {
-    const { 
-      orderHash, 
-      fragmentIndex, 
-      fillAmount, 
-      resolver, 
-      secretHash, 
-      merkleProof 
-    } = req.body;
-    
-    if (!orderHash || fragmentIndex === undefined || !fillAmount || !resolver || !secretHash || !merkleProof) {
-      return res.status(400).json(createErrorResponse(
-        'Missing required fields: orderHash, fragmentIndex, fillAmount, resolver, secretHash, merkleProof'
-      ));
-    }
-    
-    // Phase 3.5: Resolver validation
-    if (!resolverManager.isResolverAllowed(resolver)) {
-      return res.status(403).json(createErrorResponse('Resolver not whitelisted or inactive'));
-    }
-    
-    const permissions = resolverManager.getResolverPermissions(resolver);
-    if (!permissions || !permissions.canFillPartial) {
-      return res.status(403).json(createErrorResponse('Resolver not authorized for partial fills'));
-    }
-    
-    // Check fill amount limits
-    if (permissions.maxFillAmount && BigInt(fillAmount) > BigInt(permissions.maxFillAmount)) {
-      return res.status(400).json(createErrorResponse('Fill amount exceeds resolver limit'));
-    }
-    
-    const result = ordersService.submitPartialFill({
-      orderHash,
-      fragmentIndex,
-      fillAmount,
-      resolver,
-      secretHash,
-      merkleProof
-    });
-    
-    // Update resolver performance
-    resolverManager.updateResolverPerformance(resolver, {
-      fillId: result.fillId,
-      orderId: orderHash,
-      fragmentIndex,
-      resolver,
-      fillAmount,
-      auctionPrice: '1000000000000000000', // Mock price
-      gasCost: '100000000000000000', // Mock gas cost
-      secretHash,
-      merkleProof,
-      status: 'executed',
-      executedAt: Date.now()
-    });
-    
-    res.json(createSuccessResponse(result));
-    
-    console.log(`🔄 Partial fill submitted for order ${orderHash}, fragment ${fragmentIndex} by resolver ${resolver}`);
-  } catch (error) {
-    console.error('❌ Partial fill submission failed:', error);
-    res.status(500).json(createErrorResponse('Partial fill submission failed', getErrorMessage(error)));
-  }
-});
-
-// GET /order/fragments/:orderHash - Get available order fragments
-app.get('/order/fragments/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getOrderFragments(orderHash);
-    res.json(result);
-    
-    console.log(`🧩 Order fragments retrieved for ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get order fragments:', error);
-    res.status(500).json(createErrorResponse('Failed to get order fragments', getErrorMessage(error)));
-  }
-});
-
-// GET /order/progress/:orderHash - Get order fill progress
-app.get('/order/progress/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getOrderProgress(orderHash);
-    res.json(result);
-    
-    console.log(`📈 Order progress retrieved for ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get order progress:', error);
-    res.status(500).json(createErrorResponse('Failed to get order progress', getErrorMessage(error)));
-  }
-});
-
-// GET /order/recommendations/:orderHash - Get fill recommendations
-app.get('/order/recommendations/:orderHash', async (req, res) => {
-  try {
-    const { orderHash } = req.params;
-    
-    const result = ordersService.getFillRecommendations(orderHash);
-    res.json(result);
-    
-    console.log(`💡 Fill recommendations retrieved for ${orderHash}`);
-  } catch (error) {
-    console.error('❌ Failed to get fill recommendations:', error);
-    res.status(500).json(createErrorResponse('Failed to get fill recommendations', getErrorMessage(error)));
-  }
-});
-
-// ===== LEGACY ENDPOINT (for backward compatibility) =====
-
-// GET /ready-to-accept-secret-fills - Legacy endpoint (redirects to new endpoint)
-app.get('/ready-to-accept-secret-fills', async (req, res) => {
-  try {
-    const { orderHash } = req.query as any;
-    
-    if (orderHash) {
-      // Redirect to specific order endpoint
-      const result = ordersService.getReadyToAcceptSecretFills(orderHash);
-      res.json(result);
-    } else {
-      // Redirect to all orders endpoint
-      const result = ordersService.getAllReadyToAcceptSecretFills();
-      res.json(result);
-    }
-    
-    console.log('📋 Legacy ready to accept secret fills retrieved');
-  } catch (error) {
-    console.error('❌ Failed to get ready orders:', error);
-    res.status(500).json(createErrorResponse('Failed to get ready orders', getErrorMessage(error)));
-  }
-});
-
-// ===== PHASE 5: RECOVERY SYSTEM ENDPOINTS =====
-
-// GET /recovery/stats - Get recovery statistics
-app.get('/recovery/stats', async (req, res) => {
-  try {
-    const stats = recoveryService.getRecoveryStats();
-    res.json(createSuccessResponse(stats));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get recovery stats', getErrorMessage(error)));
-  }
-});
-
-// GET /recovery/requests - Get all recovery requests
-app.get('/recovery/requests', async (req, res) => {
-  try {
-    const requests = recoveryService.getRecoveryRequests();
-    res.json(createSuccessResponse(requests));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get recovery requests', getErrorMessage(error)));
-  }
-});
-
-// GET /recovery/requests/:recoveryId - Get specific recovery request
-app.get('/recovery/requests/:recoveryId', async (req, res) => {
-  try {
-    const { recoveryId } = req.params;
-    const request = recoveryService.getRecoveryRequest(recoveryId);
-    
-    if (!request) {
-      return res.status(404).json(createErrorResponse('Recovery request not found'));
-    }
-    
-    res.json(createSuccessResponse(request));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get recovery request', getErrorMessage(error)));
-  }
-});
-
-// POST /recovery/manual - Initiate manual recovery
-app.post('/recovery/manual', async (req, res) => {
-  try {
-    const { orderHash, type, initiator, reason, metadata } = req.body;
-    
-    if (!orderHash || !type || !initiator || !reason) {
-      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, type, initiator, reason'));
-    }
-    
-    // Validate recovery type
-    if (!Object.values(RecoveryType).includes(type)) {
-      return res.status(400).json(createErrorResponse(`Invalid recovery type: ${type}`));
-    }
-    
-    const recoveryId = await recoveryService.initiateManualRecovery(
-      orderHash,
-      type,
-      initiator,
-      reason,
-      metadata || {}
-    );
-    
-    res.json(createSuccessResponse({ recoveryId }));
-    
-    console.log(`🔄 Manual recovery initiated: ${recoveryId} by ${initiator}`);
-  } catch (error) {
-    console.error('❌ Manual recovery failed:', error);
-    res.status(500).json(createErrorResponse('Manual recovery failed', getErrorMessage(error)));
-  }
-});
-
-// POST /recovery/emergency - Initiate emergency recovery
-app.post('/recovery/emergency', async (req, res) => {
-  try {
-    const { orderHash, reason, initiator } = req.body;
-    
-    if (!orderHash || !reason || !initiator) {
-      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, reason, initiator'));
-    }
-    
-    const recoveryId = await recoveryService.emergencyRecovery(orderHash, reason, initiator);
-    
-    res.json(createSuccessResponse({ recoveryId }));
-    
-    console.log(`🚨 Emergency recovery initiated: ${recoveryId} by ${initiator}`);
-  } catch (error) {
-    console.error('❌ Emergency recovery failed:', error);
-    res.status(500).json(createErrorResponse('Emergency recovery failed', getErrorMessage(error)));
-  }
-});
-
-// POST /recovery/test - Test recovery system (development only)
-app.post('/recovery/test', async (req, res) => {
-  try {
-    const { orderHash, type } = req.body;
-    
-    if (!orderHash || !type) {
-      return res.status(400).json(createErrorResponse('Missing required fields: orderHash, type'));
-    }
-    
-    // Validate recovery type
-    if (!Object.values(RecoveryType).includes(type)) {
-      return res.status(400).json(createErrorResponse(`Invalid recovery type: ${type}`));
-    }
-    
-    const recoveryId = await recoveryService.initiateManualRecovery(
-      orderHash,
-      type,
-      'test-system',
-      'Recovery system test',
-      { test: true }
-    );
-    
-    res.json(createSuccessResponse({ 
-      recoveryId, 
-      message: 'Test recovery initiated',
-      type 
-    }));
-    
-    console.log(`🧪 Test recovery initiated: ${recoveryId}`);
-  } catch (error) {
-    console.error('❌ Test recovery failed:', error);
-    res.status(500).json(createErrorResponse('Test recovery failed', getErrorMessage(error)));
-  }
-});
-
-// ===== LEGACY ENDPOINT (for backward compatibility) =====
-
-// POST /create-htlc - Legacy endpoint (redirects to /submit)
-app.post('/create-htlc', async (req, res) => {
-  try {
-    const { fromToken, toToken, amount, ethAddress, stellarAddress, timestamp } = req.body;
-
-    console.log('🔄 Legacy bridge request received:', {
-      from: `${fromToken.symbol} (${fromToken.chain})`,
-      to: `${toToken.symbol} (${toToken.chain})`,
-      amount: amount,
-      ethAddress: ethAddress,
-      stellarAddress: stellarAddress
-    });
-
-    // Validate request
-    if (!fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
-      return res.status(400).json({
-        error: 'Missing required fields',
-        required: ['fromToken', 'toToken', 'amount', 'ethAddress', 'stellarAddress']
-      });
-    }
-
-    // For now, return a success response
-    // In a full implementation, this would initiate the actual bridge process
-    const bridgeId = `bridge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    res.json({
-      success: true,
-      bridgeId: bridgeId,
-      transactionId: `tx_${Date.now()}`,
-      message: 'Bridge request processed successfully',
-      estimatedTime: '2-5 minutes'
-    });
-
-    // Log the bridge request
-    console.log('✅ Bridge request processed:', bridgeId);
-
-  } catch (error) {
-    console.error('❌ Bridge request failed:', error);
-    res.status(500).json({
-      error: 'Bridge request failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// Start relayer if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  initializeRelayer().catch(error => {
-    console.error('❌ Failed to initialize relayer:', error);
-    process.exit(1);
-  });
-}
 
 console.log('🔄 Relayer service configured and ready');
 

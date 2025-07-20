@@ -1,4 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { ChevronDown, ArrowUpDown, Wallet, ExternalLink } from 'lucide-react';
+import TokenSelector from './TokenSelector';
+import { useFreighter } from '../hooks/useFreighter';
+import { 
+  Horizon, 
+  Keypair, 
+  Asset, 
+  Operation, 
+  TransactionBuilder, 
+  Networks,
+  Memo
+} from '@stellar/stellar-sdk';
 
 // Web3 imports for contract interaction
 declare global {
@@ -52,6 +64,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderCreated, setOrderCreated] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  
+  // Freighter hook for Stellar transactions
+  const { signTransaction } = useFreighter();
 
   // From ve To tokenları
   const fromToken = direction === 'eth_to_xlm' ? ETH_TOKEN : XLM_TOKEN;
@@ -161,9 +176,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       const result = await response.json();
       console.log('✅ Order created via relayer:', result);
       
-      // Now trigger MetaMask transaction with the parameters from backend
-      if (result.approvalTransaction) {
-        console.log('🔄 Requesting escrow approval transaction...');
+      // Handle different transaction types based on direction
+      if (direction === 'eth_to_xlm' && result.approvalTransaction) {
+        // ETH → XLM: Use MetaMask for ETH transaction
+        console.log('🔄 Requesting ETH approval transaction...');
         console.log('📋 Instructions:', result.instructions);
         
         try {
@@ -237,6 +253,90 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             alert(`Transaction error: ${txError.message || 'Unknown error occurred'}`);
           }
           return; // Don't show success if transaction failed
+        }
+      } else if (direction === 'xlm_to_eth') {
+        // XLM → ETH: Use Freighter for Stellar transaction
+        console.log('🔄 Creating Stellar payment transaction...');
+        console.log('💰 Sending', result.orderData.stellarAmount, 'stroops to relayer');
+        
+        try {
+          // Create Stellar server instance
+          const server = new Horizon.Server('https://horizon-testnet.stellar.org');
+          
+          // Get user's account to build transaction
+          const userAccount = await server.loadAccount(stellarAddress);
+          
+          // Create payment to relayer
+          const payment = Operation.payment({
+            destination: 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37', // Relayer address
+            asset: Asset.native(), // XLM
+            amount: (parseInt(result.orderData.stellarAmount) / 10000000).toFixed(7), // Convert stroops to XLM
+          });
+
+          // Build transaction
+          const transaction = new TransactionBuilder(userAccount, {
+            fee: '100000', // 0.01 XLM fee
+            networkPassphrase: Networks.TESTNET
+          })
+            .addOperation(payment)
+            .addMemo(Memo.text(`Bridge:${result.orderId.substring(0, 20)}`))
+            .setTimeout(300)
+            .build();
+
+          console.log('📝 Signing transaction with Freighter...');
+          
+          // Sign with Freighter
+          const signedXdr = await signTransaction(transaction.toXDR(), Networks.TESTNET);
+          
+          console.log('✅ Stellar transaction signed!');
+          
+          // Submit signed transaction to Stellar network
+          const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+          const submitResult = await server.submitTransaction(signedTx);
+          
+          console.log('🌟 Stellar transaction submitted:', submitResult.hash);
+          
+          // Show success
+          setOrderId(submitResult.hash);
+          setOrderCreated(true);
+          
+          // Process the order on backend
+          console.log('⚡ Triggering ETH release...');
+          
+          try {
+            const processResponse = await fetch('http://localhost:3001/api/orders/process', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                orderId: result.orderId,
+                stellarTxHash: submitResult.hash,
+                stellarAddress: stellarAddress
+              })
+            });
+            
+            if (processResponse.ok) {
+              const processResult = await processResponse.json();
+              console.log('✅ ETH release initiated:', processResult);
+              console.log('💰 Expected ETH amount:', result.orderData.targetAmount, 'wei');
+            } else {
+              console.error('❌ ETH release failed:', processResponse.status);
+            }
+          } catch (processError) {
+            console.error('❌ ETH release error:', processError);
+          }
+
+        } catch (stellarError: any) {
+          console.error('❌ Stellar transaction failed:', stellarError);
+          
+          // Handle Freighter errors
+          if (stellarError.message?.includes('User declined')) {
+            alert('Stellar transaction was rejected by user');
+          } else {
+            alert(`Stellar transaction error: ${stellarError.message || 'Unknown error occurred'}`);
+          }
+          return;
         }
       } else {
         // Fallback: show order created without transaction
