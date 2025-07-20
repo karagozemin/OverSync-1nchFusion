@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { getCurrentNetwork, getContractAddresses, isTestnet } from '../config/networks';
 
 interface BridgeFormProps {
   ethAddress: string;

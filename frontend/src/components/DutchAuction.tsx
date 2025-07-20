@@ -94,11 +94,11 @@ export default function DutchAuction({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+    <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <TrendingDown className="h-5 w-5 text-blue-500" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-white">
             Dutch Auction
           </h3>
         </div>
@@ -116,7 +116,7 @@ export default function DutchAuction({
           <span className="text-sm text-gray-600 dark:text-gray-400">Current Price</span>
           <div className="flex items-center space-x-1">
             <DollarSign className="h-4 w-4 text-green-500" />
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+            <span className="text-2xl font-bold text-white">
               {formatPrice(auctionState.currentPrice)}
             </span>
           </div>
@@ -133,7 +133,7 @@ export default function DutchAuction({
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
-          <span className="text-sm font-medium text-gray-900 dark:text-white">
+          <span className="text-sm font-medium text-white">
             {Math.round(auctionState.progress * 100)}%
           </span>
         </div>
@@ -152,7 +152,7 @@ export default function DutchAuction({
             <Clock className="h-4 w-4 text-gray-500" />
             <span className="text-sm text-gray-600 dark:text-gray-400">Remaining</span>
           </div>
-          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+          <span className="text-lg font-semibold text-white">
             {formatTime(auctionState.timeRemaining)}
           </span>
         </div>
@@ -161,7 +161,7 @@ export default function DutchAuction({
             <Activity className="h-4 w-4 text-gray-500" />
             <span className="text-sm text-gray-600 dark:text-gray-400">Elapsed</span>
           </div>
-          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+          <span className="text-lg font-semibold text-white">
             {formatTime(auctionState.timeElapsed)}
           </span>
         </div>
@@ -171,13 +171,13 @@ export default function DutchAuction({
       <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center text-sm">
           <span className="text-gray-600 dark:text-gray-400">Gas Price:</span>
-          <span className="font-medium text-gray-900 dark:text-white">
+          <span className="font-medium text-white">
             {gasPrice.toFixed(2)} gwei
           </span>
         </div>
         <div className="flex justify-between items-center text-sm mt-2">
           <span className="text-gray-600 dark:text-gray-400">Price Decay:</span>
-          <span className="font-medium text-gray-900 dark:text-white">
+          <span className="font-medium text-white">
             {(auctionState.priceDecay * 100).toFixed(1)}%
           </span>
         </div>

@@ -145,7 +145,7 @@ export const FAUCETS = {
 
 // Environment-based configuration
 export const getCurrentNetwork = () => {
-  const networkName = import.meta.env.VITE_NETWORK || 'testnet';
+  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
   return {
     ethereum: ETHEREUM_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
     stellar: STELLAR_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
@@ -153,7 +153,7 @@ export const getCurrentNetwork = () => {
 };
 
 export const getContractAddresses = () => {
-  const networkName = import.meta.env.VITE_NETWORK || 'testnet';
+  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
   return {
     ethereum: CONTRACT_ADDRESSES.ethereum[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
     stellar: CONTRACT_ADDRESSES.stellar[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
@@ -161,7 +161,7 @@ export const getContractAddresses = () => {
 };
 
 export const getFaucets = () => {
-  const networkName = import.meta.env.VITE_NETWORK || 'testnet';
+  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
   if (networkName === 'mainnet') {
     return { ethereum: [], stellar: [] };
   }
@@ -172,6 +172,6 @@ export const getFaucets = () => {
 };
 
 export const isTestnet = () => {
-  const networkName = import.meta.env.VITE_NETWORK || 'testnet';
+  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
   return networkName !== 'mainnet';
 }; 

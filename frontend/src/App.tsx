@@ -4,7 +4,6 @@ import FreighterTest from './components/FreighterTest'
 import DutchAuction from './components/DutchAuction'
 import RecoveryPanel from './components/RecoveryPanel'
 import TestnetBanner from './components/TestnetBanner'
-import { AnimatedDarkModeToggle } from './components/DarkModeToggle'
 import { ToastContainer, useToast } from './components/Toast'
 import { useFreighter } from './hooks/useFreighter'
 
@@ -115,8 +114,6 @@ function App() {
             <a href="#" className="text-gray-300 hover:text-white transition-colors">Bridge</a>
             <a href="#" className="text-gray-300 hover:text-white transition-colors">Pool</a>
           </nav>
-          
-          <AnimatedDarkModeToggle />
           
           {/* Connect Wallet Button */}
           <div className="relative">
