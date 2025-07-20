@@ -930,9 +930,9 @@ app.get('/health', (req, res) => {
     const metrics = monitor.getMetrics();
     const systemStatus = monitor.getSystemStatus();
     
-    res.json({
+  res.json({ 
       status: systemStatus,
-      timestamp: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
       service: 'FusionBridge Relayer',
       version: metrics.version,
       uptime: metrics.uptime,
@@ -1255,10 +1255,10 @@ app.post('/presets/optimize', async (req, res) => {
 });
 
 // Start relayer (always initialize when module loads)
-initializeRelayer().catch(error => {
-  console.error('❌ Failed to initialize relayer:', error);
-  process.exit(1);
-});
+  initializeRelayer().catch(error => {
+    console.error('❌ Failed to initialize relayer:', error);
+    process.exit(1);
+  });
 
 console.log('🔄 Relayer service configured and ready');
 
