@@ -231,8 +231,9 @@ export class UptimeMonitor extends EventEmitter {
    */
   private async collectSystemMetrics(): Promise<void> {
     const memUsage = process.memoryUsage();
-    const systemMemory = require('os').totalmem();
-    const freeMemory = require('os').freemem();
+    const os = await import('os');
+    const systemMemory = os.totalmem();
+    const freeMemory = os.freemem();
 
     this.metrics.system = {
       memoryUsage: {
@@ -246,7 +247,7 @@ export class UptimeMonitor extends EventEmitter {
         total: 0,
         percentage: 0,
       },
-      loadAverage: require('os').loadavg(),
+      loadAverage: os.loadavg(),
     };
   }
 

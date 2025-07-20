@@ -8,16 +8,16 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "jest", 
+    "test": "jest",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@fusionbridge/contracts": "workspace:*",
     "@fusionbridge/stellar": "workspace:*",
-    "@stellar/stellar-sdk": "^11.2.0",
-    "ethers": "^6.9.0",
+    "@stellar/stellar-sdk": "^11.3.0",
     "dotenv": "^16.3.0",
+    "ethers": "^6.9.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
@@ -36,4 +36,4 @@
     "event-listener",
     "cross-chain"
   ]
-} 
+}
