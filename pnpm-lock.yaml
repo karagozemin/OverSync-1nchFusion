@@ -165,7 +165,7 @@ importers:
         specifier: workspace:*
         version: link:../stellar
       '@stellar/stellar-sdk':
-        specifier: ^11.2.0
+        specifier: ^11.3.0
         version: 11.3.0
       dotenv:
         specifier: ^16.3.0

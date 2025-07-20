@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react';
 
+// Web3 imports for contract interaction
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      selectedAddress?: string;
+    };
+  }
+}
+
 interface BridgeFormProps {
   ethAddress: string;
   stellarAddress: string;
@@ -24,6 +34,16 @@ const XLM_TOKEN = {
 
 // Sabit kur oranı (gerçek uygulamada API'den alınacak)
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
+
+// Contract ABI for HTLCBridge
+const HTLC_BRIDGE_ABI = [
+  "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)",
+  "function getNextOrderId() external view returns (uint256)"
+];
+
+// Contract address from environment
+const HTLC_CONTRACT_ADDRESS = (import.meta as any).env?.VITE_HTLC_CONTRACT_ADDRESS || '0x088370cBc9b5aB4Cd1f5ed21e621959f6f0b1C25';
+const SEPOLIA_CHAIN_ID = '0xaa36a7'; // 11155111 in hex
 
 export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormProps) {
   const [direction, setDirection] = useState<'eth_to_xlm' | 'xlm_to_eth'>('eth_to_xlm');
@@ -63,7 +83,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     setEstimatedAmount('');
   };
 
-  // Form gönderimi
+  // Form gönderimi - RELAYER API ÜZERİNDEN
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -71,30 +91,175 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       return;
     }
     
+    if (!window.ethereum) {
+      alert('MetaMask not found! Please install MetaMask.');
+      return;
+    }
+    
     setIsSubmitting(true);
     
     try {
-      // Burada gerçek API çağrısı yapılacak
-      // Şimdilik mock bir işlem simüle ediyoruz
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Check if connected to Sepolia
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (chainId !== SEPOLIA_CHAIN_ID) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SEPOLIA_CHAIN_ID }],
+          });
+        } catch (switchError: any) {
+          if (switchError.code === 4902) {
+            // Network not added yet
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: SEPOLIA_CHAIN_ID,
+                chainName: 'Sepolia Testnet',
+                rpcUrls: ['https://sepolia.infura.io/v3/'],
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+                nativeCurrency: {
+                  name: 'SepoliaETH',
+                  symbol: 'SEP',
+                  decimals: 18
+                }
+              }],
+            });
+          } else {
+            throw switchError;
+          }
+        }
+      }
+
+      console.log('🔄 Creating bridge order via Relayer API...');
       
-      // Mock order ID
-      const mockOrderId = `0x${Math.random().toString(16).substring(2, 10)}`;
-      setOrderId(mockOrderId);
-      setOrderCreated(true);
+      // Create order request to relayer
+      const orderRequest = {
+        fromChain: direction === 'eth_to_xlm' ? 'ethereum' : 'stellar',
+        toChain: direction === 'eth_to_xlm' ? 'stellar' : 'ethereum',
+        fromToken: direction === 'eth_to_xlm' ? 'ETH' : 'XLM',
+        toToken: direction === 'eth_to_xlm' ? 'XLM' : 'ETH',
+        amount: amount,
+        ethAddress: ethAddress,
+        stellarAddress: stellarAddress,
+        direction: direction
+      };
       
-      console.log('Order created:', {
-        fromToken,
-        toToken,
-        amount,
-        estimatedAmount,
-        ethAddress,
-        stellarAddress,
-        direction
+      // Send request to relayer
+      const response = await fetch('http://localhost:3001/api/orders/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(orderRequest)
       });
       
-    } catch (error) {
-      console.error('Error creating order:', error);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create order');
+      }
+      
+      const result = await response.json();
+      console.log('✅ Order created via relayer:', result);
+      
+      // Now trigger MetaMask transaction with the parameters from backend
+      if (result.approvalTransaction) {
+        console.log('🔄 Requesting escrow approval transaction...');
+        console.log('📋 Instructions:', result.instructions);
+        
+        try {
+          // Send simple approval transaction via MetaMask
+          const txHash = await window.ethereum.request({
+            method: 'eth_sendTransaction',
+            params: [{
+              ...result.approvalTransaction,
+              from: ethAddress
+            }],
+          });
+          
+          console.log('✅ Approval transaction sent:', txHash);
+          console.log('🤖 Relayer will now create HTLC contract automatically');
+          
+          // Show success with transaction hash
+          setOrderId(txHash);
+          setOrderCreated(true);
+          
+          // Automatically trigger order processing
+          console.log('⚡ Triggering automatic cross-chain processing...');
+          
+          try {
+            const processResponse = await fetch('http://localhost:3001/api/orders/process', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                orderId: result.orderId,
+                txHash: txHash
+              })
+            });
+            
+            if (processResponse.ok) {
+              const processResult = await processResponse.json();
+              console.log('✅ Cross-chain processing initiated:', processResult);
+              console.log('🌟 Stellar transaction:', processResult.stellarTxId);
+              console.log('💫 Expected XLM amount:', processResult.details?.stellar?.amount);
+            } else {
+              console.error('❌ Processing request failed:', processResponse.status);
+            }
+          } catch (processError) {
+            console.error('❌ Processing request error:', processError);
+          }
+          
+          // Store transaction details for tracking
+          console.log('Order approved:', {
+            orderId: result.orderId,
+            approvalTxHash: txHash,
+            fromToken,
+            toToken,
+            amount,
+            estimatedAmount,
+            ethAddress,
+            stellarAddress,
+            direction,
+            message: result.message,
+            nextStep: result.nextStep
+          });
+          
+        } catch (txError: any) {
+          console.error('❌ Approval transaction failed:', txError);
+          
+          // Handle MetaMask errors
+          if (txError.code === 4001) {
+            alert('Transaction was rejected by user');
+          } else if (txError.code === -32603) {
+            alert('Transaction failed. Please check your balance and try again.');
+          } else {
+            alert(`Transaction error: ${txError.message || 'Unknown error occurred'}`);
+          }
+          return; // Don't show success if transaction failed
+        }
+      } else {
+        // Fallback: show order created without transaction
+        setOrderId(result.orderId);
+        setOrderCreated(true);
+        
+        console.log('Order created (no transaction):', {
+          orderId: result.orderId,
+          fromToken,
+          toToken,
+          amount,
+          estimatedAmount,
+          ethAddress,
+          stellarAddress,
+          direction
+        });
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error creating order:', error);
+      
+      // Show error message
+      alert(`Error: ${error.message || 'Unknown error occurred'}`);
     } finally {
       setIsSubmitting(false);
     }
