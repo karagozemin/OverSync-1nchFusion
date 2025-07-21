@@ -230,15 +230,57 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             }],
           });
           
-          console.log('✅ Approval transaction sent:', txHash);
-          console.log('🤖 Relayer will now create HTLC contract automatically');
+          console.log('📤 Transaction sent:', txHash);
+          console.log('⏳ Waiting for transaction confirmation...');
+          
+          // Update UI to show confirmation waiting
+          setIsSubmitting(true);
+          
+          // Wait for transaction receipt to confirm success
+          let receipt = null;
+          let attempts = 0;
+          const maxAttempts = 60; // Wait max 2 minutes (2s * 60 = 120s)
+          
+          while (!receipt && attempts < maxAttempts) {
+            try {
+              receipt = await window.ethereum.request({
+                method: 'eth_getTransactionReceipt',
+                params: [txHash]
+              });
+              
+              if (!receipt) {
+                console.log(`⏳ Waiting for confirmation... (${attempts + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                attempts++;
+              }
+            } catch (receiptError) {
+              console.warn('⚠️ Error getting receipt:', receiptError);
+              attempts++;
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+          
+          if (!receipt) {
+            throw new Error('Transaction confirmation timeout');
+          }
+          
+          // Check transaction status
+          const isSuccess = receipt.status === '0x1';
+          console.log('📋 Transaction status:', receipt.status, isSuccess ? '✅ SUCCESS' : '❌ FAILED');
+          
+          if (!isSuccess) {
+            throw new Error('Transaction failed on blockchain');
+          }
+          
+          console.log('✅ Transaction confirmed successfully!');
+          console.log('🤖 Now triggering cross-chain processing...');
           
           // Show success with transaction hash
           setOrderId(txHash);
           setOrderCreated(true);
           
-          // Automatically trigger order processing
-          console.log('⚡ Triggering automatic cross-chain processing...');
+          // ONLY process if Ethereum transaction was successful
+          console.log('⚡ Triggering cross-chain processing after successful ETH tx...');
           
           try {
             const processResponse = await fetch(`${API_BASE_URL}/api/orders/process`, {
