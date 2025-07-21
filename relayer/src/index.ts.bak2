@@ -15,8 +15,8 @@ import { ethers } from 'ethers';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 
-// Real HTLC Bridge Contract ABI  
-const HTLC_BRIDGE_ABI = [
+// HTLC Contract ABI for method encoding
+const HTLC_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
 ];
 import { ethereumListener } from './ethereum-listener.js';
@@ -196,9 +196,9 @@ async function initializeRelayer() {
   
   // Constants  
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
-const HTLC_CONTRACT_ADDRESS = '0x8535C03f3e744Cf569B71AC0b5Fdd8a7589B24Df'; // REAL HTLC BRIDGE CONTRACT
+const HTLC_CONTRACT_ADDRESS = '0x8535C03f3e744Cf569B71AC0b5Fdd8a7589B24Df'; // NEW WORKING CONTRACT
 
-console.log('🏭 USING REAL HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
+console.log('🔥 USING NEW WORKING CONTRACT:', HTLC_CONTRACT_ADDRESS);
   
   // Global order storage (in production this would be a database)
   const activeOrders = new Map();
@@ -275,7 +275,7 @@ console.log('🏭 USING REAL HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           token: '0x0000000000000000000000000000000000000000', // ETH
           amount: (parseFloat(amount) * 1e18).toString(),
           hashLock,
-          timelock: Math.floor(Date.now() / 1000) + 7201, // 2+ hours (strict > MIN_TIMELOCK)
+          timelock: Math.floor(Date.now() / 1000) + 7200, // 2 hours (must be > MIN_TIMELOCK)
           feeRate: 100, // 1%
           beneficiary: stellarAddress,
           refundAddress: ethAddress,
@@ -301,43 +301,31 @@ console.log('🏭 USING REAL HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           stellarAddress
         });
 
-        // REAL HTLC CONTRACT: Back to original contract with proper parameters
-        console.log('🏭 REAL HTLC MODE: Using HTLCBridge contract');
-        console.log('🔑 Relayer (Owner):', ethAddress);
-        
-        // Native ETH handling: Use user's address as token (common pattern)
-        const ETH_TOKEN_ADDRESS = ethAddress;
-        
-        // Encode HTLC createOrder with corrected parameters
-        const htlcInterface = new ethers.Interface(HTLC_BRIDGE_ABI);
+        // Encode HTLC createOrder method with proper parameters
+        const htlcInterface = new ethers.Interface(HTLC_ABI);
         const encodedData = htlcInterface.encodeFunctionData("createOrder", [
-          ETH_TOKEN_ADDRESS,        // Special ETH token address
-          orderData.amount,         // Amount in wei
-          orderData.hashLock,       // Hash lock
-          orderData.timelock,       // Timelock (current + 2 hours)
-          orderData.feeRate,        // Fee rate (50 = 0.5%)
-          ethAddress,               // Beneficiary (user address)
-          ethAddress,               // Refund address (user address)  
-          1,                        // Destination chain ID (1 for Stellar)
-          ethers.ZeroHash,          // Stellar tx hash (initially zero)
+          ethAddress,          // Use user's address as token for native ETH
+          orderData.amount,    // Amount in wei  
+          orderData.hashLock,  // Hash lock
+          orderData.timelock,  // Timelock timestamp
+          orderData.feeRate,   // Fee rate (100 = 1%)
+          ethAddress,          // Beneficiary (must be ETH format)
+          ethAddress,          // Refund address
+          1,                   // Destination chain ID (1 for Stellar)
+          ethers.ZeroHash,     // Stellar tx hash (initially zero)
           orderData.partialFillEnabled || false  // Partial fill enabled
         ]);
 
-        // Calculate required safety deposit (minimum 0.001 ETH)
-        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH in wei
-        const orderAmountBigInt = BigInt(orderData.amount);
-        const requiredValue = orderAmountBigInt > MIN_SAFETY_DEPOSIT ? orderAmountBigInt : MIN_SAFETY_DEPOSIT;
-
-        // Return real HTLC contract interaction
+        // Return HTLC contract interaction with proper encoding
         res.json({
           success: true,
           orderId,
           orderData,
           approvalTransaction: {
-            to: HTLC_CONTRACT_ADDRESS,        // Real HTLC contract
-            value: `0x${requiredValue.toString(16)}`,  // At least MIN_SAFETY_DEPOSIT
-            data: encodedData,                // Proper createOrder call
-            gas: '0x1E8480',                  // 2M gas for complex contract call
+            to: HTLC_CONTRACT_ADDRESS,
+            value: '0x38D7EA4C68000',  // 0.001 ETH minimum safety deposit
+            data: encodedData,   // Properly encoded method data  
+            gas: '0xF4240',     // 1,000,000 gas for contract interaction
             gasPrice: '0x4a817c800'
           },
           message: 'Order created! Please approve the escrow deposit.',

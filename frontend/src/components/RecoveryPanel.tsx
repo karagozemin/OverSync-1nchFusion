@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, RefreshCw, Clock, Shield, CheckCircle, XCircle } from 'lucide-react';
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3001';
+
 interface RecoveryOrder {
   id: string;
   orderId: string;
@@ -69,7 +71,7 @@ export default function RecoveryPanel({
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:3001/api/recovery/orders`, {
+      const response = await fetch(`${API_BASE_URL}/api/recovery/orders`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -94,7 +96,7 @@ export default function RecoveryPanel({
     setError('');
     
     try {
-      const response = await fetch(`http://localhost:3001/api/recovery/recover`, {
+      const response = await fetch(`${API_BASE_URL}/api/recovery/recover`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
