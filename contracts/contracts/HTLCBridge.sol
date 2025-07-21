@@ -252,7 +252,7 @@ contract HTLCBridge is ReentrancyGuard, Ownable {
         require(msg.value >= MIN_SAFETY_DEPOSIT, "Safety deposit too low");
         require(msg.value <= MAX_SAFETY_DEPOSIT, "Safety deposit too high");
         require(hashLockToOrderId[hashLock] == 0, "Hash lock already used");
-        require(authorizedResolvers[msg.sender] || msg.sender == owner(), "Not authorized");
+        // Authorization check removed - allow all users to create orders
         
         // Generate unique order ID
         orderId = _nextOrderId++;

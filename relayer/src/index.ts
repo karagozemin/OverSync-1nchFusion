@@ -196,9 +196,9 @@ async function initializeRelayer() {
   
   // Constants  
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
-const HTLC_CONTRACT_ADDRESS = '0x8535C03f3e744Cf569B71AC0b5Fdd8a7589B24Df'; // REAL HTLC BRIDGE CONTRACT
+const HTLC_CONTRACT_ADDRESS = '0xc792D389a552028aE5d799b1CAA61228154ff2A4'; // PUBLIC HTLC BRIDGE (No Auth)
 
-console.log('🏭 USING REAL HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
+console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
   
   // Global order storage (in production this would be a database)
   const activeOrders = new Map();
