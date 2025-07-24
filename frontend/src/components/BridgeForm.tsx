@@ -44,7 +44,56 @@ const XLM_TOKEN = {
 // Sabit kur oranı (gerçek uygulamada API'den alınacak)
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
 
+// Helper function to save transaction to localStorage for history
+const saveTransactionToHistory = (transaction: {
+  orderId: string;
+  txHash: string;
+  direction: 'eth-to-xlm' | 'xlm-to-eth';
+  amount: string;
+  estimatedAmount: string;
+  ethAddress: string;
+  stellarAddress: string;
+  ethTxHash?: string;
+  stellarTxHash?: string;
+  status?: 'pending' | 'completed' | 'failed' | 'cancelled';
+}) => {
+  try {
+    const historyTransaction = {
+      id: transaction.orderId,
+      txHash: transaction.txHash,
+      fromNetwork: transaction.direction === 'eth-to-xlm' ? 'ETH Sepolia' : 'Stellar Testnet',
+      toNetwork: transaction.direction === 'eth-to-xlm' ? 'Stellar Testnet' : 'ETH Sepolia',
+      fromToken: transaction.direction === 'eth-to-xlm' ? 'ETH' : 'XLM',
+      toToken: transaction.direction === 'eth-to-xlm' ? 'XLM' : 'ETH',
+      amount: transaction.amount,
+      estimatedAmount: transaction.estimatedAmount,
+      status: transaction.status || 'pending',
+      timestamp: Date.now(),
+      ethTxHash: transaction.ethTxHash,
+      stellarTxHash: transaction.stellarTxHash,
+      direction: transaction.direction
+    };
 
+    // Get existing transactions
+    const existing = localStorage.getItem('bridge_transactions');
+    const transactions = existing ? JSON.parse(existing) : [];
+    
+    // Add new transaction
+    transactions.unshift(historyTransaction); // Add to beginning
+    
+    // Keep only last 50 transactions
+    if (transactions.length > 50) {
+      transactions.splice(50);
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('bridge_transactions', JSON.stringify(transactions));
+    
+    console.log('💾 Transaction saved to history:', historyTransaction);
+  } catch (error) {
+    console.error('❌ Failed to save transaction to history:', error);
+  }
+};
 
 const SEPOLIA_CHAIN_ID = '0xaa36a7'; // 11155111 in hex
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -312,6 +361,19 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.log('✅ Transaction confirmed successfully!');
           console.log('🤖 Now triggering cross-chain processing...');
           
+          // Save transaction to history immediately when ETH tx confirms
+          saveTransactionToHistory({
+            orderId: result.orderId,
+            txHash: txHash,
+            direction: 'eth-to-xlm',
+            amount: amount,
+            estimatedAmount: estimatedAmount,
+            ethAddress: ethAddress,
+            stellarAddress: stellarAddress,
+            ethTxHash: txHash,
+            status: 'pending' // Initial status, will update after processing
+          });
+          
           // Update status to cross-chain processing
           setStatusMessage('Köprüleniyor...');
           
@@ -459,6 +521,19 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           const submitResult = await server.submitTransaction(signedTx);
           
           console.log('🌟 Stellar transaction submitted:', submitResult.hash);
+          
+          // Save transaction to history immediately when XLM tx submits
+          saveTransactionToHistory({
+            orderId: result.orderId,
+            txHash: submitResult.hash,
+            direction: 'xlm-to-eth',
+            amount: amount,
+            estimatedAmount: estimatedAmount,
+            ethAddress: ethAddress,
+            stellarAddress: stellarAddress,
+            stellarTxHash: submitResult.hash,
+            status: 'pending' // Initial status, will update after ETH processing
+          });
           
           // Show success
           setOrderId(submitResult.hash);

@@ -233,7 +233,66 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
   app.get('/api/test', (req, res) => {
     res.json({ message: 'API endpoints are working!', timestamp: new Date().toISOString() });
   });
+
+
+
   console.log('📍 DEBUG: Test endpoints registered (root + api)');
+  console.log('📍 DEBUG: Now registering transaction history endpoint...');
+
+  // POST /api/transactions/history - RIGHT NEXT TO WORKING ENDPOINT
+  app.post('/api/transactions/history', async (req, res) => {
+    console.log('🎯 TRANSACTION HISTORY ENDPOINT HIT - NEXT TO ORDERS!');
+    try {
+      const { ethAddress, stellarAddress } = req.body;
+      
+      console.log('📊 Fetching transaction history for:', { ethAddress, stellarAddress });
+      
+      // Get all orders from activeOrders Map  
+      const allOrders = Array.from(activeOrders.values());
+      console.log('📊 Total orders in activeOrders:', allOrders.length);
+      
+      // Filter orders by user addresses and format for history
+      const userTransactions = allOrders
+        .filter(order => 
+          (ethAddress && order.ethAddress === ethAddress) ||
+          (stellarAddress && order.stellarAddress === stellarAddress)
+        )
+        .map(order => ({
+          id: order.orderId,
+          txHash: order.ethTxHash || order.stellarTxHash || order.orderId,
+          fromNetwork: order.direction === 'eth-to-xlm' ? 'ETH Sepolia' : 'Stellar Testnet',
+          toNetwork: order.direction === 'eth-to-xlm' ? 'Stellar Testnet' : 'ETH Sepolia',
+          fromToken: order.direction === 'eth-to-xlm' ? 'ETH' : 'XLM',
+          toToken: order.direction === 'eth-to-xlm' ? 'XLM' : 'ETH',
+          amount: order.amount || '0',
+          estimatedAmount: order.targetAmount ? 
+            (parseFloat(order.targetAmount) / 1e18).toFixed(6) : '0',
+          status: order.status === 'completed' ? 'completed' : 
+                 order.status === 'failed' ? 'failed' :
+                 order.status === 'cancelled' ? 'cancelled' : 'pending',
+          timestamp: order.timestamp || Date.now(),
+          ethTxHash: order.ethTxHash,
+          stellarTxHash: order.stellarTxHash,
+          direction: order.direction
+        }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      console.log(`📊 Found ${userTransactions.length} matching transactions for user`);
+      
+      res.json({
+        success: true,
+        transactions: userTransactions,
+        count: userTransactions.length
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Transaction history fetch failed:', error);
+      res.status(500).json({
+        error: 'Failed to fetch transaction history',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
   
   app.post('/api/orders/create', async (req, res) => {
     try {

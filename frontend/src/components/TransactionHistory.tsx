@@ -90,13 +90,37 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
         direction: 'eth-to-xlm'
       }
     ];
-    setTransactions(mockTransactions);
-  }, []);
+
+    // Try to get real transactions from localStorage first
+    const savedTransactions = localStorage.getItem('bridge_transactions');
+    if (savedTransactions) {
+      try {
+        const realTransactions = JSON.parse(savedTransactions);
+        console.log('📊 Found real transactions in localStorage:', realTransactions);
+        
+        // Combine real and mock transactions
+        const allTransactions = [...realTransactions, ...mockTransactions];
+        setTransactions(allTransactions);
+      } catch (error) {
+        console.log('❌ Error reading localStorage transactions:', error);
+        setTransactions(mockTransactions);
+      }
+    } else {
+      console.log('📊 No real transactions found, using mock data');
+      setTransactions(mockTransactions);
+    }
+    
+    // Also try API if addresses are available
+    if (ethAddress || stellarAddress) {
+      fetchTransactions();
+    }
+  }, [ethAddress, stellarAddress]);
 
   const fetchTransactions = async () => {
     setIsLoading(true);
     try {
-      // TODO: Replace with actual API call
+      console.log('📊 Fetching transactions from API...');
+      
       const response = await fetch(`${API_BASE_URL}/api/transactions/history`, {
         method: 'POST',
         headers: {
@@ -110,10 +134,20 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
       
       if (response.ok) {
         const data = await response.json();
-        setTransactions(data.transactions || []);
+        console.log('📊 API Response:', data);
+        
+        if (data.success && data.transactions) {
+          setTransactions(data.transactions);
+          console.log(`✅ Loaded ${data.transactions.length} transactions from API`);
+        } else {
+          console.log('📊 No transactions found, keeping mock data');
+        }
+      } else {
+        console.log('❌ API failed, keeping mock data');
       }
     } catch (error) {
-      console.log('Failed to fetch transactions from API, using mock data');
+      console.log('❌ Failed to fetch transactions from API:', error);
+      console.log('📊 Keeping mock data for demo');
     } finally {
       setIsLoading(false);
     }
