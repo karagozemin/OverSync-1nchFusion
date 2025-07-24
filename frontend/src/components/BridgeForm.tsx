@@ -395,7 +395,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         amount: amount,
         ethAddress: ethAddress,
         stellarAddress: stellarAddress,
-        direction: direction
+        direction: direction,
+        exchangeRate: exchangeRate // Include real-time rate
       };
       
       // Send request to relayer

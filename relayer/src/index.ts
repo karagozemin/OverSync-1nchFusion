@@ -296,7 +296,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
   
   app.post('/api/orders/create', async (req, res) => {
     try {
-      const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction } = req.body;
+      const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction, exchangeRate } = req.body;
       
       // Validate required fields
       if (!fromChain || !toChain || !fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
@@ -313,6 +313,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         fromToken,
         toToken,
         amount,
+        exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
         ethAddress,
         stellarAddress
       });
@@ -351,7 +352,8 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           ...orderData,
           ethAddress,
           stellarAddress,
-          amount
+          amount,
+          exchangeRate: exchangeRate || ETH_TO_XLM_RATE // Store real-time rate
         });
 
         console.log('✅ ETH→XLM Order created:', orderId);
@@ -411,12 +413,16 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
       } else if (direction === 'xlm_to_eth') {
         // For XLM to ETH direction, create order on Stellar first
         
+        // Use real-time exchange rate for conversion
+        const realExchangeRate = exchangeRate || ETH_TO_XLM_RATE;
+        
         const orderData = {
           orderId,
           stellarAmount: (parseFloat(amount) * 1e7).toString(), // XLM has 7 decimals
-          targetAmount: (parseFloat(amount) / 10000 * 1e18).toString(), // Convert to ETH
+          targetAmount: (parseFloat(amount) / realExchangeRate * 1e18).toString(), // Convert to ETH using real rate
           ethAddress,
           stellarAddress,
+          exchangeRate: realExchangeRate, // Store real-time rate
           created: new Date().toISOString(),
           status: 'pending_stellar_transaction'
         };
@@ -513,8 +519,10 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           const balance = await provider.getBalance(relayerWallet.address);
           console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
           
-          // Calculate ETH amount to send (convert from XLM amount)
-          const ethAmount = storedOrder.targetAmount || (parseFloat(orderAmount || '0.1') / ETH_TO_XLM_RATE * 1e18).toString();
+                  // Calculate ETH amount to send using real-time rate from frontend
+        const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
+        const ethAmount = storedOrder.targetAmount || (parseFloat(orderAmount || '0.1') / exchangeRate * 1e18).toString();
+        console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (XLM→ETH)');
           console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
           console.log('🏠 Sending to user address:', userEthAddress);
           
@@ -592,8 +600,10 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
         console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
 
-        // Calculate XLM amount to send (convert ETH amount to XLM)
-        const xlmAmount = (parseFloat(orderAmount || '0.001') * ETH_TO_XLM_RATE).toFixed(7);
+        // Calculate XLM amount to send using real-time rate from frontend
+        const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
+        const xlmAmount = (parseFloat(orderAmount || '0.001') * exchangeRate).toFixed(7);
+        console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH');
         
         console.log('🎯 Sending to user address:', userStellarAddress);
         console.log('💰 XLM amount to send:', xlmAmount);
@@ -658,7 +668,9 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         const mockTxId = `mock_stellar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
         console.log('🔄 Falling back to mock transaction:', mockTxId);
         
-        const xlmAmount = (parseFloat(orderAmount || '0.001') * ETH_TO_XLM_RATE).toFixed(7);
+        // Use real-time rate for mock response too
+        const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE;
+        const xlmAmount = (parseFloat(orderAmount || '0.001') * exchangeRate).toFixed(7);
         
         res.json({
           success: true,
@@ -733,8 +745,10 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         const balance = await provider.getBalance(relayerWallet.address);
         console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
         
-        // Calculate ETH amount to send (convert from XLM amount)
-        const ethAmount = storedOrder?.targetAmount || (parseFloat(orderAmount) / ETH_TO_XLM_RATE * 1e18).toString();
+        // Calculate ETH amount to send using real-time rate from frontend  
+        const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
+        const ethAmount = storedOrder?.targetAmount || (parseFloat(orderAmount) / exchangeRate * 1e18).toString();
+        console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (dedicated endpoint)');
         console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
         console.log('🏠 Sending to user address:', userEthAddress);
         
