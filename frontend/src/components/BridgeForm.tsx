@@ -635,13 +635,13 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               
               <div className="relative">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.0"
+                <input
+                  type="text"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.0"
                     className="flex-1 bg-transparent text-2xl font-medium text-white outline-none"
-                  />
+                />
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -661,7 +661,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                 </div>
                 <div className="flex justify-between items-center mt-1">
                   <div className="text-sm text-gray-400">
-                    $0.00
+                  $0.00
                   </div>
                   <div className="text-sm text-gray-400">
                     Balance: {balance} {fromToken.symbol}

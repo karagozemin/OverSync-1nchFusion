@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import BridgeForm from './components/BridgeForm'
-import FreighterTest from './components/FreighterTest'
 import DutchAuction from './components/DutchAuction'
-import RecoveryPanel from './components/RecoveryPanel'
+import TransactionHistory from './components/TransactionHistory'
 
 import { ToastContainer, useToast } from './components/Toast'
 import { useFreighter } from './hooks/useFreighter'
@@ -22,7 +21,7 @@ function App() {
   const [showWalletMenu, setShowWalletMenu] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'bridge' | 'recovery'>('bridge');
+  const [activeTab, setActiveTab] = useState<'bridge' | 'history'>('bridge');
   
   // Freighter hook usage
   const {
@@ -275,14 +274,14 @@ function App() {
             Bridge
           </button>
           <button
-            onClick={() => setActiveTab('recovery')}
+            onClick={() => setActiveTab('history')}
             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              activeTab === 'recovery'
+              activeTab === 'history'
                 ? 'bg-blue-500 text-white shadow-lg'
                 : 'text-gray-300 hover:text-white hover:bg-white/10'
             }`}
           >
-            Recovery
+            History
           </button>
         </div>
       </div>
@@ -296,7 +295,6 @@ function App() {
                 ethAddress={ethAddress} 
                 stellarAddress={stellarAddress || ''}
               />
-              <FreighterTest />
             </div>
             <div className="space-y-6">
               <DutchAuction
@@ -311,17 +309,11 @@ function App() {
           </div>
         )}
         
-        {activeTab === 'recovery' && (
+        {activeTab === 'history' && (
           <div className="w-full max-w-4xl">
-            <RecoveryPanel
+            <TransactionHistory
               ethAddress={ethAddress}
               stellarAddress={stellarAddress || ''}
-              onRecoverySuccess={(orderId) => {
-                toast.success('Recovery Successful!', `Order ${orderId} has been recovered successfully`);
-              }}
-              onRecoveryError={(orderId, error) => {
-                toast.error('Recovery Failed', `Failed to recover order ${orderId}: ${error}`);
-              }}
             />
           </div>
         )}
