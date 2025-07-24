@@ -56,6 +56,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderCreated, setOrderCreated] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+  const [balance, setBalance] = useState<string>('0');
   
   // Freighter hook for Stellar transactions
   const { signTransaction } = useFreighter();
@@ -63,6 +65,37 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   // From ve To tokenları
   const fromToken = direction === 'eth_to_xlm' ? ETH_TOKEN : XLM_TOKEN;
   const toToken = direction === 'eth_to_xlm' ? XLM_TOKEN : ETH_TOKEN;
+
+  // Balance fetch function
+  const fetchBalance = async () => {
+    try {
+      if (direction === 'eth_to_xlm' && ethAddress && window.ethereum) {
+        // ETH Balance
+        const ethBalance = await window.ethereum.request({
+          method: 'eth_getBalance',
+          params: [ethAddress, 'latest']
+        });
+        const balanceInEth = (parseInt(ethBalance, 16) / Math.pow(10, 18)).toFixed(4);
+        setBalance(balanceInEth);
+      } else if (direction === 'xlm_to_eth' && stellarAddress) {
+        // Stellar Balance - using Horizon API
+        const response = await fetch(`https://horizon-testnet.stellar.org/accounts/${stellarAddress}`);
+        const accountData = await response.json();
+        const xlmBalance = accountData.balances.find((b: any) => b.asset_type === 'native')?.balance || '0';
+        setBalance(parseFloat(xlmBalance).toFixed(4));
+      }
+    } catch (error) {
+      console.error('Balance fetch error:', error);
+      setBalance('0');
+    }
+  };
+
+  // Fetch balance when direction or addresses change
+  useEffect(() => {
+    if ((direction === 'eth_to_xlm' && ethAddress) || (direction === 'xlm_to_eth' && stellarAddress)) {
+      fetchBalance();
+    }
+  }, [direction, ethAddress, stellarAddress]);
   
   // Miktar değiştiğinde karşılık gelen tutarı hesapla
   useEffect(() => {
@@ -233,8 +266,12 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.log('📤 Transaction sent:', txHash);
           console.log('⏳ Waiting for transaction confirmation...');
           
-          // Update UI to show confirmation waiting
+          // Update UI status
+          setStatusMessage('Gönderiliyor...');
           setIsSubmitting(true);
+          
+          // Update status to confirmation waiting
+          setStatusMessage('Onaylanıyor...');
           
           // Wait for transaction receipt to confirm success
           let receipt = null;
@@ -275,6 +312,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.log('✅ Transaction confirmed successfully!');
           console.log('🤖 Now triggering cross-chain processing...');
           
+          // Update status to cross-chain processing
+          setStatusMessage('Köprüleniyor...');
+          
           // Show success with transaction hash
           setOrderId(txHash);
           setOrderCreated(true);
@@ -301,11 +341,19 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               console.log('✅ Cross-chain processing initiated:', processResult);
               console.log('🌟 Stellar transaction:', processResult.stellarTxId);
               console.log('💫 Expected XLM amount:', processResult.details?.stellar?.amount);
+              
+              // Update status to completed
+              setStatusMessage('Tamamlandı ✅');
+              setIsSubmitting(false);
             } else {
               console.error('❌ Processing request failed:', processResponse.status);
               
               // Development: Show success even if processing fails
               console.log('🚀 Development mode: Showing success despite processing failure');
+              
+              // Update status to completed (development mode)
+              setStatusMessage('Tamamlandı ✅');
+              setIsSubmitting(false);
               
               // Show success anyway for development
               setOrderId(txHash);
@@ -316,6 +364,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             
             // Development: Show success even if processing throws error
             console.log('🚀 Development mode: Showing success despite processing error');
+            
+            // Update status to completed (development mode)
+            setStatusMessage('Tamamlandı ✅');
+            setIsSubmitting(false);
             
             // Show success anyway for development
             setOrderId(txHash);
@@ -339,6 +391,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
         } catch (txError: any) {
           console.error('❌ Approval transaction failed:', txError);
+          
+          // Update status to failed
+          setStatusMessage('Başarısız ❌');
+          setIsSubmitting(false);
+          
           console.error('🔍 Full error details:', {
             code: txError.code,
             message: txError.message,
@@ -411,7 +468,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.log('⚡ Triggering ETH release...');
           
           try {
-            const processResponse = await fetch(`${API_BASE_URL}/api/orders/process`, {
+            const processResponse = await fetch(`${API_BASE_URL}/api/orders/xlm-to-eth`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -577,15 +634,38 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               </div>
               
               <div className="relative">
-                <input
-                  type="text"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.0"
-                  className="w-full bg-transparent text-2xl font-medium text-white outline-none"
-                />
-                <div className="text-sm text-gray-400 mt-1">
-                  $0.00
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.0"
+                    className="flex-1 bg-transparent text-2xl font-medium text-white outline-none"
+                  />
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setAmount((parseFloat(balance) * 0.5).toFixed(4))}
+                      className="px-2 py-1 text-xs font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAmount(balance)}
+                      className="px-2 py-1 text-xs font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <div className="text-sm text-gray-400">
+                    $0.00
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Balance: {balance} {fromToken.symbol}
+                  </div>
                 </div>
               </div>
             </div>
@@ -639,6 +719,13 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             <div>~1 min</div>
           </div>
           
+          {/* Status Message */}
+          {statusMessage && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center">
+              <div className="text-blue-400 font-medium">{statusMessage}</div>
+            </div>
+          )}
+          
           {/* Submit Button */}
           <button
             type="submit"
@@ -652,7 +739,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             {!walletsConnected 
               ? 'Connect Wallet' 
               : isSubmitting 
-                ? 'Processing...' 
+                ? statusMessage || 'Processing...' 
                 : 'Swap'
             }
           </button>

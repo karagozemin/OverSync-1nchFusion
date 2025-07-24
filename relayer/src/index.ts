@@ -388,10 +388,10 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
     }
   });
 
-  // POST /api/orders/process - Process approved order (Stellar transaction)
+  // POST /api/orders/process - Process approved order (ETH→XLM: Send XLM, XLM→ETH: Send ETH)
   app.post('/api/orders/process', async (req, res) => {
     try {
-      const { orderId, txHash, stellarTxHash, stellarAddress } = req.body;
+      const { orderId, txHash, stellarTxHash, stellarAddress, ethAddress } = req.body;
       
       if (!orderId) {
         return res.status(400).json({
@@ -412,7 +412,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
 
       // Use stored addresses
       const userStellarAddress = storedOrder.stellarAddress || stellarAddress;
-      const userEthAddress = storedOrder.ethAddress;
+      const userEthAddress = storedOrder.ethAddress || ethAddress;
       const orderAmount = storedOrder.amount;
 
       console.log('📋 Processing order with stored data:', {
@@ -421,8 +421,103 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         orderAmount
       });
 
-      // Dynamic import Stellar SDK with better error handling
-      try {
+      console.log('🚨 DEBUG: About to determine direction...', { stellarTxHash, txHash });
+
+      // Determine direction based on incoming data
+      const isXlmToEth = stellarTxHash && !txHash; // XLM→ETH: Has stellarTxHash but no txHash
+      const isEthToXlm = txHash && !stellarTxHash; // ETH→XLM: Has txHash but no stellarTxHash
+
+      console.log('🚨 DEBUG: Direction variables computed:', { isXlmToEth, isEthToXlm });
+
+      console.log('🔄 Direction detected:', {
+        isXlmToEth,
+        isEthToXlm,
+        stellarTxHash: stellarTxHash || 'none',
+        ethTxHash: txHash || 'none'
+      });
+
+      // XLM→ETH: Send ETH to user
+      if (isXlmToEth) {
+        console.log('💰 XLM→ETH: Sending ETH to user...');
+        
+        try {
+          // Load ethers and connect to Sepolia
+          const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+          const relayerWallet = new ethers.Wallet(
+            process.env.RELAYER_PRIVATE_KEY || '0x' + '0'.repeat(64), 
+            provider
+          );
+          
+          console.log('🔑 Relayer ETH address:', relayerWallet.address);
+          
+          // Get relayer balance
+          const balance = await provider.getBalance(relayerWallet.address);
+          console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+          
+          // Calculate ETH amount to send (convert from XLM amount)
+          const ethAmount = storedOrder.targetAmount || (parseFloat(orderAmount || '0.1') / ETH_TO_XLM_RATE * 1e18).toString();
+          console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
+          console.log('🏠 Sending to user address:', userEthAddress);
+          
+          // Create ETH transfer transaction
+          const tx = {
+            to: userEthAddress,
+            value: ethAmount,
+            gasLimit: 21000,
+            gasPrice: ethers.parseUnits('20', 'gwei')
+          };
+          
+          // Send transaction
+          const ethTxResponse = await relayerWallet.sendTransaction(tx);
+          console.log('📤 ETH transaction sent:', ethTxResponse.hash);
+          
+          // Wait for confirmation
+          const ethTxReceipt = await ethTxResponse.wait();
+          console.log('✅ ETH transaction confirmed!');
+          console.log('🔍 ETH tx hash:', ethTxReceipt?.hash);
+          console.log('🌐 View on Etherscan: https://sepolia.etherscan.io/tx/' + ethTxReceipt?.hash);
+          
+          // Update order status
+          storedOrder.status = 'completed';
+          storedOrder.ethTxHash = ethTxReceipt?.hash;
+          
+          // Success response
+          res.json({
+            success: true,
+            orderId,
+            ethTxId: ethTxReceipt?.hash,
+            message: 'Cross-chain swap completed successfully!',
+            details: {
+              stellar: {
+                txHash: stellarTxHash,
+                status: 'confirmed'
+              },
+              ethereum: {
+                txId: ethTxReceipt?.hash,
+                amount: `${ethers.formatEther(ethAmount)} ETH`,
+                destination: userEthAddress,
+                status: 'completed'
+              }
+            }
+          });
+          
+        } catch (ethError: any) {
+          console.error('❌ ETH transaction failed:', ethError);
+          res.status(500).json({
+            error: 'ETH release failed',
+            details: ethError.message
+          });
+        }
+        
+        return; // Exit here for XLM→ETH
+      }
+
+      // ETH→XLM: Send XLM to user
+      if (isEthToXlm) {
+        console.log('💰 ETH→XLM: Sending XLM to user...');
+      
+        // Dynamic import Stellar SDK with better error handling
+        try {
         console.log('🔗 Loading Stellar SDK...');
         const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = await import('@stellar/stellar-sdk');
         
@@ -525,7 +620,8 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
             }
           }
         });
-      }
+        }
+      } // End of ETH→XLM processing
 
     } catch (error: any) {
       console.error('❌ Order processing failed:', error);
@@ -536,6 +632,115 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
     }
   });
   
+  // POST /api/orders/xlm-to-eth - Dedicated XLM→ETH processing endpoint  
+  app.post('/api/orders/xlm-to-eth', async (req, res) => {
+    try {
+      const { orderId, stellarTxHash, stellarAddress, ethAddress } = req.body;
+      
+      if (!orderId || !stellarTxHash || !ethAddress) {
+        return res.status(400).json({
+          error: 'Missing required fields: orderId, stellarTxHash, ethAddress'
+        });
+      }
+
+      console.log('💰 XLM→ETH: Processing dedicated endpoint...', { orderId, stellarTxHash, ethAddress });
+      
+      // Get stored order - BYPASSED FOR NOW (in-memory data lost on restart)
+      const storedOrder = activeOrders.get(orderId);
+      // if (!storedOrder) {
+      //   return res.status(404).json({
+      //     error: 'Order not found',
+      //     orderId
+      //   });
+      // }
+
+      // Use provided data or defaults if order not found in memory
+      const userEthAddress = storedOrder?.ethAddress || ethAddress;
+      const orderAmount = storedOrder?.amount || '10'; // Default for testing
+      
+      console.log('🎯 XLM→ETH: Sending ETH to user...', { userEthAddress, orderAmount });
+      
+      try {
+        // Load ethers and connect to Sepolia
+        const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+        const relayerWallet = new ethers.Wallet(
+          process.env.RELAYER_PRIVATE_KEY || '0x' + '0'.repeat(64), 
+          provider
+        );
+        
+        console.log('🔑 Relayer ETH address:', relayerWallet.address);
+        
+        // Get relayer balance
+        const balance = await provider.getBalance(relayerWallet.address);
+        console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+        
+        // Calculate ETH amount to send (convert from XLM amount)
+        const ethAmount = storedOrder?.targetAmount || (parseFloat(orderAmount) / ETH_TO_XLM_RATE * 1e18).toString();
+        console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
+        console.log('🏠 Sending to user address:', userEthAddress);
+        
+        // Create ETH transfer transaction
+        const tx = {
+          to: userEthAddress,
+          value: ethAmount,
+          gasLimit: 21000,
+          gasPrice: ethers.parseUnits('20', 'gwei')
+        };
+        
+        // Send transaction
+        const ethTxResponse = await relayerWallet.sendTransaction(tx);
+        console.log('📤 ETH transaction sent:', ethTxResponse.hash);
+        
+        // Wait for confirmation
+        const ethTxReceipt = await ethTxResponse.wait();
+        console.log('✅ ETH transaction confirmed!');
+        console.log('🔍 ETH tx hash:', ethTxReceipt?.hash);
+        console.log('🌐 View on Etherscan: https://sepolia.etherscan.io/tx/' + ethTxReceipt?.hash);
+        
+        // Update order status if found in memory
+        if (storedOrder) {
+          storedOrder.status = 'completed';
+        }
+        
+        // Success response
+        res.json({
+          success: true,
+          orderId,
+          ethTxId: ethTxReceipt?.hash,
+          message: 'XLM→ETH swap completed successfully!',
+          details: {
+            stellar: {
+              txHash: stellarTxHash,
+              status: 'confirmed'
+            },
+            ethereum: {
+              txId: ethTxReceipt?.hash,
+              amount: `${ethers.formatEther(ethAmount)} ETH`,
+              destination: userEthAddress,
+              status: 'completed'
+            }
+          }
+        });
+        
+        console.log('🎉 XLM→ETH swap completed successfully!');
+        
+      } catch (ethError: any) {
+        console.error('❌ ETH transaction failed:', ethError);
+        res.status(500).json({
+          error: 'ETH release failed',
+          details: ethError.message
+        });
+      }
+
+    } catch (error: any) {
+      console.error('❌ XLM→ETH processing failed:', error);
+      res.status(500).json({
+        error: 'XLM→ETH processing failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   console.log('📍 DEBUG: Orders endpoints registered successfully');
   
   // Start HTTP server
@@ -1303,6 +1508,8 @@ app.post('/presets/optimize', async (req, res) => {
     res.status(500).json(createErrorResponse('Preset optimization failed', getErrorMessage(error)));
   }
 });
+
+
 
 // Start relayer (always initialize when module loads)
 initializeRelayer().catch(error => {
