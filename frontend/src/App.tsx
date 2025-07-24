@@ -109,9 +109,7 @@ function App() {
         
         <div className="flex items-center gap-4">
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Swap</a>
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Bridge</a>
-            <a href="#" className="text-gray-300 hover:text-white transition-colors">Pool</a>
+            <a href="https://www.alchemy.com/faucets/ethereum-sepolia" target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-white transition-colors">Faucet</a>
           </nav>
           
           {/* Connect Wallet Button */}
