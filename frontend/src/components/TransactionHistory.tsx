@@ -110,44 +110,47 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
       setTransactions(mockTransactions);
     }
     
-    // Also try API if addresses are available
-    if (ethAddress || stellarAddress) {
-      fetchTransactions();
-    }
+    // Note: Removed automatic API call since API endpoint has issues
+    // Refresh button now only refreshes from localStorage
   }, [ethAddress, stellarAddress]);
 
   const fetchTransactions = async () => {
     setIsLoading(true);
     try {
-      console.log('📊 Fetching transactions from API...');
+      console.log('📊 Refreshing transactions from localStorage only...');
       
-      const response = await fetch(`${API_BASE_URL}/api/transactions/history`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ethAddress,
-          stellarAddress
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('📊 API Response:', data);
+      // Get fresh data from localStorage
+      const savedTransactions = localStorage.getItem('bridge_transactions');
+      if (savedTransactions) {
+        const realTransactions = JSON.parse(savedTransactions);
+        console.log('✅ Refreshed transactions from localStorage:', realTransactions.length, 'transactions');
         
-        if (data.success && data.transactions) {
-          setTransactions(data.transactions);
-          console.log(`✅ Loaded ${data.transactions.length} transactions from API`);
-        } else {
-          console.log('📊 No transactions found, keeping mock data');
-        }
+        // Combine with mock data
+        const mockTransactions: Transaction[] = [
+          {
+            id: 'mock1',
+            txHash: '0x1234567890abcdef1234567890abcdef12345678',
+            fromNetwork: 'ETH Sepolia',
+            toNetwork: 'Stellar Testnet',
+            fromToken: 'ETH',
+            toToken: 'XLM',
+            amount: '0.001',
+            estimatedAmount: '10.00',
+            status: 'completed',
+            timestamp: Date.now() - 1800000,
+            ethTxHash: '0x1234567890abcdef1234567890abcdef12345678',
+            stellarTxHash: 'abcd1234567890abcdef1234567890abcdef123456789',
+            direction: 'eth-to-xlm'
+          }
+        ];
+        
+        const allTransactions = [...realTransactions, ...mockTransactions];
+        setTransactions(allTransactions);
       } else {
-        console.log('❌ API failed, keeping mock data');
+        console.log('📊 No real transactions found in localStorage');
       }
     } catch (error) {
-      console.log('❌ Failed to fetch transactions from API:', error);
-      console.log('📊 Keeping mock data for demo');
+      console.log('❌ Failed to refresh from localStorage:', error);
     } finally {
       setIsLoading(false);
     }

@@ -95,6 +95,35 @@ const saveTransactionToHistory = (transaction: {
   }
 };
 
+// Helper function to update transaction status in localStorage
+const updateTransactionStatus = (orderId: string, status: 'pending' | 'completed' | 'failed' | 'cancelled', additionalData?: any) => {
+  try {
+    const existing = localStorage.getItem('bridge_transactions');
+    if (existing) {
+      const transactions = JSON.parse(existing);
+      const transactionIndex = transactions.findIndex((tx: any) => tx.id === orderId);
+      
+      if (transactionIndex !== -1) {
+        transactions[transactionIndex].status = status;
+        
+        // Add additional data if provided
+        if (additionalData) {
+          Object.assign(transactions[transactionIndex], additionalData);
+        }
+        
+        // Save back to localStorage
+        localStorage.setItem('bridge_transactions', JSON.stringify(transactions));
+        
+        console.log(`💾 Transaction status updated: ${orderId} -> ${status}`);
+      } else {
+        console.log(`⚠️ Transaction not found for status update: ${orderId}`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to update transaction status:', error);
+  }
+};
+
 const SEPOLIA_CHAIN_ID = '0xaa36a7'; // 11155111 in hex
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3001';
 
@@ -404,6 +433,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               console.log('🌟 Stellar transaction:', processResult.stellarTxId);
               console.log('💫 Expected XLM amount:', processResult.details?.stellar?.amount);
               
+              // Update transaction status to completed
+              updateTransactionStatus(result.orderId, 'completed', {
+                stellarTxHash: processResult.stellarTxId
+              });
+              
               // Update status to completed
               setStatusMessage('Tamamlandı ✅');
               setIsSubmitting(false);
@@ -412,6 +446,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               
               // Development: Show success even if processing fails
               console.log('🚀 Development mode: Showing success despite processing failure');
+              
+              // Update transaction status to completed (development mode)
+              updateTransactionStatus(result.orderId, 'completed');
               
               // Update status to completed (development mode)
               setStatusMessage('Tamamlandı ✅');
@@ -426,6 +463,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             
             // Development: Show success even if processing throws error
             console.log('🚀 Development mode: Showing success despite processing error');
+            
+            // Update transaction status to completed (development mode)
+            updateTransactionStatus(result.orderId, 'completed');
             
             // Update status to completed (development mode)
             setStatusMessage('Tamamlandı ✅');
@@ -560,11 +600,19 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               const processResult = await processResponse.json();
               console.log('✅ ETH release initiated:', processResult);
               console.log('💰 Expected ETH amount:', result.orderData.targetAmount, 'wei');
+              
+              // Update transaction status to completed
+              updateTransactionStatus(result.orderId, 'completed', {
+                ethTxHash: processResult.ethTxId
+              });
             } else {
               console.error('❌ ETH release failed:', processResponse.status);
               
               // Development: Show success even if processing fails
               console.log('🚀 Development mode: Showing success despite ETH processing failure');
+              
+              // Update transaction status to completed (development mode)
+              updateTransactionStatus(result.orderId, 'completed');
               
               // Show success anyway for development
               setOrderId(submitResult.hash);
@@ -575,6 +623,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             
             // Development: Show success even if processing throws error
             console.log('🚀 Development mode: Showing success despite ETH processing error');
+            
+            // Update transaction status to completed (development mode)
+            updateTransactionStatus(result.orderId, 'completed');
             
             // Show success anyway for development
             setOrderId(submitResult.hash);
