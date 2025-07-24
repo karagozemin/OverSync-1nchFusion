@@ -521,7 +521,14 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           
                   // Calculate ETH amount to send using real-time rate from frontend
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
-        const ethAmount = storedOrder.targetAmount || (parseFloat(orderAmount || '0.1') / exchangeRate * 1e18).toString();
+        let ethAmount;
+        if (storedOrder?.targetAmount) {
+          ethAmount = storedOrder.targetAmount;
+        } else {
+          // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
+          const ethAmountDecimal = parseFloat(orderAmount || '0.1') / exchangeRate;
+          ethAmount = ethers.parseEther(ethAmountDecimal.toFixed(18)).toString();
+        }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (XLM→ETH)');
           console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
           console.log('🏠 Sending to user address:', userEthAddress);
@@ -706,15 +713,21 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
   // POST /api/orders/xlm-to-eth - Dedicated XLM→ETH processing endpoint  
   app.post('/api/orders/xlm-to-eth', async (req, res) => {
     try {
+      console.log('🔍 DEBUG: XLM→ETH endpoint received request body:', JSON.stringify(req.body, null, 2));
+      
       const { orderId, stellarTxHash, stellarAddress, ethAddress } = req.body;
       
       if (!orderId || !stellarTxHash || !ethAddress) {
+        console.log('❌ Missing required fields:', { orderId: !!orderId, stellarTxHash: !!stellarTxHash, ethAddress: !!ethAddress });
         return res.status(400).json({
           error: 'Missing required fields: orderId, stellarTxHash, ethAddress'
         });
       }
 
-      console.log('💰 XLM→ETH: Processing dedicated endpoint...', { orderId, stellarTxHash, ethAddress });
+      // Normalize Ethereum address (fix checksum)
+      const normalizedEthAddress = ethers.getAddress(ethAddress.toLowerCase());
+
+      console.log('💰 XLM→ETH: Processing dedicated endpoint...', { orderId, stellarTxHash, stellarAddress, ethAddress: normalizedEthAddress });
       
       // Get stored order - BYPASSED FOR NOW (in-memory data lost on restart)
       const storedOrder = activeOrders.get(orderId);
@@ -726,7 +739,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
       // }
 
       // Use provided data or defaults if order not found in memory
-      const userEthAddress = storedOrder?.ethAddress || ethAddress;
+      const userEthAddress = storedOrder?.ethAddress || normalizedEthAddress;
       const orderAmount = storedOrder?.amount || '10'; // Default for testing
       
       console.log('🎯 XLM→ETH: Sending ETH to user...', { userEthAddress, orderAmount });
@@ -747,7 +760,14 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         
         // Calculate ETH amount to send using real-time rate from frontend  
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
-        const ethAmount = storedOrder?.targetAmount || (parseFloat(orderAmount) / exchangeRate * 1e18).toString();
+        let ethAmount;
+        if (storedOrder?.targetAmount) {
+          ethAmount = storedOrder.targetAmount;
+        } else {
+          // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
+          const ethAmountDecimal = parseFloat(orderAmount) / exchangeRate;
+          ethAmount = ethers.parseEther(ethAmountDecimal.toFixed(18)).toString();
+        }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (dedicated endpoint)');
         console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
         console.log('🏠 Sending to user address:', userEthAddress);
@@ -807,6 +827,13 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
 
     } catch (error: any) {
       console.error('❌ XLM→ETH processing failed:', error);
+      console.error('❌ Error stack trace:', error.stack);
+      console.error('❌ Error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code
+      });
+      
       res.status(500).json({
         error: 'XLM→ETH processing failed',
         details: error instanceof Error ? error.message : 'Unknown error'
