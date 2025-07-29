@@ -547,20 +547,23 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       console.log('✅ Order created via relayer:', result);
       
       // Handle different transaction types based on direction
-      if (direction === 'eth_to_xlm' && result.approvalTransaction) {
+      if (direction === 'eth_to_xlm' && (result.approvalTransaction || result.proxyTransaction)) {
         // ETH → XLM: Use MetaMask for ETH transaction
         console.log('🔄 Requesting ETH approval transaction...');
         console.log('📋 Instructions:', result.instructions);
         
+        // Use proxyTransaction if available, fallback to approvalTransaction
+        const transactionData = result.proxyTransaction || result.approvalTransaction;
+        
         try {
           // Validate transaction parameters
-          if (!result.approvalTransaction.to || !result.approvalTransaction.value) {
+          if (!transactionData.to || !transactionData.value) {
             throw new Error('Invalid transaction parameters from relayer');
           }
           
-                          // Log transaction details for debugging
+          // Log transaction details for debugging
           console.log('🔍 Transaction details (CONTRACT INTERACTION):', {
-            ...result.approvalTransaction,
+            ...transactionData,
             from: ethAddress
           });
           
@@ -572,13 +575,13 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.log('💰 User balance:', balance);
           
           // Estimate gas if not provided by relayer
-          let gasLimit = result.approvalTransaction.gas;
+          let gasLimit = transactionData.gas;
           if (!gasLimit) {
             try {
               const estimatedGas = await window.ethereum.request({
                 method: 'eth_estimateGas',
                 params: [{
-                  ...result.approvalTransaction,
+                  ...transactionData,
                   from: ethAddress
                 }]
               });
@@ -586,14 +589,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               console.log('⛽ Estimated gas:', estimatedGas, 'Using:', gasLimit);
             } catch (gasError) {
               console.warn('⚠️ Gas estimation failed, using fallback:', gasError);
-              gasLimit = '0x7530'; // 30000 fallback
+              gasLimit = '0x493E0'; // 300000 fallback for contract interaction
             }
           }
           
-          // REAL HTLC CONTRACT: Using newly deployed working contract
-          console.log('🏭 REAL CONTRACT MODE: Using working HTLC contract');
+          // ESCROW FACTORY DIRECT MODE: Using direct contract interaction
+          console.log('🏭 ESCROW FACTORY DIRECT MODE: Using direct contract transaction');
           console.log('📋 Transaction details:', {
-            ...result.approvalTransaction,
+            ...transactionData,
             from: ethAddress,
             gas: gasLimit
           });
@@ -601,7 +604,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           const txHash = await window.ethereum.request({
             method: 'eth_sendTransaction',
             params: [{
-              ...result.approvalTransaction,
+              ...transactionData,
               from: ethAddress,
               gas: gasLimit
             }],

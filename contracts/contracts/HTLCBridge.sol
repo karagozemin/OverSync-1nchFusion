@@ -241,7 +241,7 @@ contract HTLCBridge is ReentrancyGuard, Ownable {
         bool partialFillEnabled
     ) external payable nonReentrant returns (uint256 orderId) {
         // Input validation
-        require(token != address(0), "Invalid token");
+        // Note: token can be address(0) for ETH transactions
         require(amount > 0, "Amount must be > 0");
         require(hashLock != bytes32(0), "Invalid hash lock");
         require(timelock > block.timestamp + MIN_TIMELOCK, "Timelock too early");

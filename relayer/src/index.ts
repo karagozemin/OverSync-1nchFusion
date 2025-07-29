@@ -19,6 +19,25 @@ config({ path: resolve(process.cwd(), '../.env') });
 const HTLC_BRIDGE_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
 ];
+
+// EscrowFactory Contract ABI
+const ESCROW_FACTORY_ABI = [
+  "function createEscrow((address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config) external payable returns (uint256 escrowId)",
+  "function fundEscrow(uint256 escrowId) external",
+  "function claimEscrow(uint256 escrowId, bytes32 preimage) external",
+  "function refundEscrow(uint256 escrowId) external",
+  "function getEscrow(uint256 escrowId) external view returns (tuple(address escrowAddress, tuple(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config, uint8 status, uint256 createdAt, uint256 filledAmount, uint256 safetyDepositPaid, address resolver, bool isActive))",
+  "function authorizeResolver(address resolver) external",
+  "function authorizedResolvers(address resolver) external view returns (bool)",
+  "function totalEscrows() external view returns (uint256)",
+  "function MIN_SAFETY_DEPOSIT() external view returns (uint256)",
+  "function MAX_SAFETY_DEPOSIT() external view returns (uint256)",
+  // Events
+  "event EscrowCreated(uint256 indexed escrowId, address indexed escrowAddress, address indexed resolver, address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 safetyDeposit, uint256 chainId)",
+  "event EscrowFunded(uint256 indexed escrowId, address indexed funder, uint256 amount, uint256 safetyDeposit)",
+  "event EscrowClaimed(uint256 indexed escrowId, address indexed claimer, uint256 amount, bytes32 preimage)",
+  "event EscrowRefunded(uint256 indexed escrowId, address indexed refundee, uint256 amount, uint256 safetyDeposit)"
+];
 import { ethereumListener } from './ethereum-listener.js';
 import { quoterService } from './quoter-service.js';
 import { ordersService } from './orders.js';
@@ -43,6 +62,11 @@ import RecoveryService, { RecoveryConfig, RecoveryType, RecoveryStatus } from '.
 
 // Phase 8: Monitoring System imports
 import { getMonitor } from './monitoring.js';
+
+// Contract addresses
+const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
+const HTLC_CONTRACT_ADDRESS = '0x3f344ACDd17a0c4D21096da895152820f595dc8A'; // New HTLCBridge (ETH FIX!)
+const ESCROW_FACTORY_ADDRESS = '0x6c3818E074d891F1FBB3A75913e4BDe87BcF1123'; // New EscrowFactory (ETH FIX!)
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
@@ -200,12 +224,9 @@ async function initializeRelayer() {
   
   // ===== ORDERS API ENDPOINTS =====
   
-  // Constants  
-const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
-const HTLC_CONTRACT_ADDRESS = '0xc792D389a552028aE5d799b1CAA61228154ff2A4'; // PUBLIC HTLC BRIDGE (No Auth)
-
-console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
-  
+  console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
+  console.log('🏭 USING ESCROW FACTORY CONTRACT:', ESCROW_FACTORY_ADDRESS);
+    
   // Global order storage (in production this would be a database)
   const activeOrders = new Map();
 
@@ -324,10 +345,13 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         stellarAddress
       });
 
+      // Normalize addresses to avoid checksum issues
+      const normalizedEthAddress = ethAddress.toLowerCase();
+
       // Generate order ID
       const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       
-      // For ETH to XLM direction, create HTLC order on Ethereum
+      // For ETH to XLM direction, use EscrowFactory Direct Contract Interaction
       if (direction === 'eth_to_xlm') {
         
         // Generate HTLC parameters
@@ -341,79 +365,77 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
           token: '0x0000000000000000000000000000000000000000', // ETH
           amount: (parseFloat(amount) * 1e18).toString(),
           hashLock,
-          timelock: Math.floor(Date.now() / 1000) + 7201, // 2+ hours (strict > MIN_TIMELOCK)
+          timelock: Math.floor(Date.now() / 1000) + 7201, // 2+ hours
           feeRate: 100, // 1%
           beneficiary: stellarAddress,
-          refundAddress: ethAddress,
-          destinationChainId: 1, // Stellar represented as 1
+          refundAddress: normalizedEthAddress,
+          destinationChainId: 1, // Stellar
           stellarTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
           partialFillEnabled: false,
           secret: secret,
           created: new Date().toISOString(),
-          status: 'pending_user_confirmation'
+          status: 'pending_direct_escrow'
         };
 
         // Store order
         activeOrders.set(orderId, {
           ...orderData,
-          ethAddress,
+          ethAddress: normalizedEthAddress,
           stellarAddress,
           amount,
-          exchangeRate: exchangeRate || ETH_TO_XLM_RATE // Store real-time rate
+          exchangeRate: exchangeRate || ETH_TO_XLM_RATE
         });
 
         console.log('✅ ETH→XLM Order created:', orderId);
-        console.log('💾 Order stored with addresses:', {
-          ethAddress,
-          stellarAddress
-        });
-
-        // REAL HTLC CONTRACT: Back to original contract with proper parameters
-        console.log('🏭 REAL HTLC MODE: Using HTLCBridge contract');
-        console.log('🔑 Relayer (Owner):', ethAddress);
+        console.log('🏭 DIRECT ESCROW MODE: User → EscrowFactory Contract');
         
-        // Native ETH handling: Use user's address as token (common pattern)
-        const ETH_TOKEN_ADDRESS = ethAddress;
-        
-        // Encode HTLC createOrder with corrected parameters
-        const htlcInterface = new ethers.Interface(HTLC_BRIDGE_ABI);
-        const encodedData = htlcInterface.encodeFunctionData("createOrder", [
-          ETH_TOKEN_ADDRESS,        // Special ETH token address
-          orderData.amount,         // Amount in wei
-          orderData.hashLock,       // Hash lock
-          orderData.timelock,       // Timelock (current + 2 hours)
-          orderData.feeRate,        // Fee rate (50 = 0.5%)
-          ethAddress,               // Beneficiary (user address)
-          ethAddress,               // Refund address (user address)  
-          1,                        // Destination chain ID (1 for Stellar)
-          ethers.ZeroHash,          // Stellar tx hash (initially zero)
-          orderData.partialFillEnabled || false  // Partial fill enabled
-        ]);
-
-        // Calculate required safety deposit (minimum 0.001 ETH)
-        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH in wei
+        // Calculate total cost (order + safety deposit)
+        const MIN_SAFETY_DEPOSIT = BigInt('10000000000000000'); // 0.01 ETH
         const orderAmountBigInt = BigInt(orderData.amount);
-        const requiredValue = orderAmountBigInt > MIN_SAFETY_DEPOSIT ? orderAmountBigInt : MIN_SAFETY_DEPOSIT;
+        const totalCost = orderAmountBigInt + MIN_SAFETY_DEPOSIT;
+        
+        // Create EscrowConfig struct
+        const escrowConfig = {
+          token: '0x0000000000000000000000000000000000000000', // ETH
+          amount: orderData.amount,
+          hashLock: orderData.hashLock,
+          timelock: orderData.timelock,
+          beneficiary: normalizedEthAddress,
+          refundAddress: normalizedEthAddress,
+          safetyDeposit: MIN_SAFETY_DEPOSIT.toString(),
+          chainId: 1,
+          stellarTxHash: ethers.ZeroHash,
+          isPartialFillEnabled: orderData.partialFillEnabled || false
+        };
+        
+        // Encode EscrowFactory createEscrow call
+        const escrowInterface = new ethers.Interface(ESCROW_FACTORY_ABI);
+        const encodedData = escrowInterface.encodeFunctionData("createEscrow", [escrowConfig]);
 
-        // Return real HTLC contract interaction
+        // Return direct EscrowFactory contract interaction
         res.json({
           success: true,
           orderId,
           orderData,
+          escrowConfig,
           approvalTransaction: {
-            to: HTLC_CONTRACT_ADDRESS,        // Real HTLC contract
-            value: `0x${requiredValue.toString(16)}`,  // At least MIN_SAFETY_DEPOSIT
-            data: encodedData,                // Proper createOrder call
-            gas: '0x1E8480',                  // 2M gas for complex contract call
-            gasPrice: '0x4a817c800'
+            to: ESCROW_FACTORY_ADDRESS,       // Direct to EscrowFactory
+            value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
+            data: encodedData                 // createEscrow call with config
+            // Let MetaMask estimate gas automatically
           },
-          message: 'Order created! Please approve the escrow deposit.',
-          nextStep: 'Approve deposit, then relayer will create HTLC contract',
+          message: '🏭 Direct EscrowFactory: Contract interaction!',
+          nextStep: 'EscrowFactory createEscrow çağırın',
           instructions: [
-            '1. Approve escrow deposit transaction',
-            '2. Relayer will automatically create HTLC contract',
-            '3. Cross-chain swap will begin'
-          ]
+            '1. User MetaMask ile direkt EscrowFactory contract\'ını çağıracak',
+            '2. createEscrow fonksiyonu çalışacak',
+            '3. Create2 ile deterministik escrow adresi oluşacak'
+          ],
+          safetyDeposit: ethers.formatEther(MIN_SAFETY_DEPOSIT.toString()),
+          totalCost: ethers.formatEther(totalCost.toString()),
+          contractType: 'ESCROW_FACTORY_DIRECT',
+          contractAddress: ESCROW_FACTORY_ADDRESS,
+          note: '✅ Authorization gerekmez - herkes kullanabilir!'
         });
         
       } else if (direction === 'xlm_to_eth') {
@@ -881,6 +903,257 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
 
   console.log('📍 DEBUG: Orders endpoints registered successfully');
   
+  // Phase 6.5: EscrowFactory Event Listening
+  console.log('🏭 Setting up EscrowFactory event listeners...');
+  
+  // Setup EscrowFactory contract instance for event listening
+  try {
+    const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+    const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+    
+    // Get relayer wallet for proxy operations
+    const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+    const relayerWallet = new ethers.Wallet(relayerPrivateKey, provider);
+    const relayerAddress = relayerWallet.address;
+    
+    console.log('🔑 Relayer address for proxy operations:', relayerAddress);
+    
+    // Check if relayer is authorized
+    try {
+      const contractWithProvider = escrowFactoryContract as any;
+      const isAuthorized = await contractWithProvider.authorizedResolvers(relayerAddress);
+      
+      if (isAuthorized) {
+        console.log('✅ Relayer is authorized - EscrowFactory ready!');
+      } else {
+        console.log('⚠️  WARNING: Relayer is NOT authorized!');
+        console.log('   📌 Users cannot create escrows directly');
+        console.log('   📌 Run: POST /api/admin/authorize-relayer with admin key');
+        console.log('   📌 Or use HTLC Bridge instead (no authorization needed)');
+      }
+    } catch (error) {
+      console.error('❌ Failed to check relayer authorization:', error);
+    }
+    
+    // Monitor incoming ETH transfers to relayer using simpler approach
+    let lastProcessedBlock = await provider.getBlockNumber();
+    
+    setInterval(async () => {
+      try {
+        const currentBlock = await provider.getBlockNumber();
+        
+        // Check new blocks for transfers
+        for (let blockNum = lastProcessedBlock + 1; blockNum <= currentBlock; blockNum++) {
+          const block = await provider.getBlock(blockNum, true);
+          if (!block?.transactions) continue;
+          
+          // Check each transaction
+          for (const txHash of block.transactions) {
+            const tx = await provider.getTransaction(txHash);
+            if (!tx) continue;
+            
+            // Check if it's ETH transfer to relayer
+            if (tx.to === relayerAddress && tx.value && tx.value > 0n) {
+              console.log('💰 Incoming ETH transfer detected:', {
+                from: tx.from,
+                value: ethers.formatEther(tx.value),
+                hash: tx.hash
+              });
+              
+              // Find matching order
+              for (const [orderId, orderData] of activeOrders.entries()) {
+                if (orderData.ethAddress === tx.from && orderData.status === 'pending_relayer_escrow') {
+                  console.log(`✅ Matched transfer to order ${orderId}`);
+                  
+                  // Create escrow on behalf of user
+                  await createEscrowForOrder(orderData, orderId, escrowFactoryContract, relayerWallet);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        lastProcessedBlock = currentBlock;
+      } catch (error) {
+        console.error('❌ Error monitoring transfers:', error);
+      }
+    }, 10000); // Check every 10 seconds
+    
+    // Function to create escrow for order
+    async function createEscrowForOrder(orderData: any, orderId: string, contract: ethers.Contract, wallet: ethers.Wallet) {
+      try {
+        console.log(`🏭 Creating escrow for order ${orderId}...`);
+        
+        const escrowConfig = {
+          token: '0x0000000000000000000000000000000000000000', // ETH
+          amount: orderData.amount,
+          hashLock: orderData.hashLock,
+          timelock: orderData.timelock,
+          beneficiary: orderData.ethAddress,
+          refundAddress: orderData.ethAddress,
+          safetyDeposit: '10000000000000000', // 0.01 ETH
+          chainId: 1,
+          stellarTxHash: ethers.ZeroHash,
+          isPartialFillEnabled: orderData.partialFillEnabled || false
+        };
+        
+        const totalValue = BigInt(orderData.amount) + BigInt('10000000000000000');
+        
+        // Create escrow as authorized resolver using interface
+        const contractWithSigner = contract.connect(wallet) as any;
+        const tx = await contractWithSigner.createEscrow(escrowConfig, {
+          value: totalValue,
+          gasLimit: 3000000
+        });
+        
+        console.log(`📝 Escrow creation tx sent: ${tx.hash}`);
+        const receipt = await tx.wait();
+        console.log(`✅ Escrow created successfully for order ${orderId}`);
+        
+        // Update order status
+        orderData.status = 'escrow_created_by_relayer';
+        orderData.escrowTxHash = tx.hash;
+        
+      } catch (error) {
+        console.error(`❌ Failed to create escrow for order ${orderId}:`, error);
+        orderData.status = 'escrow_creation_failed';
+      }
+    }
+    
+    // Listen for EscrowCreated events
+    escrowFactoryContract.on('EscrowCreated', async (escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId, event) => {
+      console.log('🏭 EscrowCreated Event:', {
+        escrowId: escrowId.toString(),
+        escrowAddress,
+        resolver,
+        token,
+        amount: ethers.formatEther(amount),
+        hashLock,
+        chainId: chainId.toString(),
+        safetyDeposit: ethers.formatEther(safetyDeposit)
+      });
+      
+      // Find related order and update status
+      for (const [orderId, orderData] of activeOrders.entries()) {
+        if (orderData.hashLock === hashLock) {
+          console.log(`✅ Matched escrow ${escrowId} with order ${orderId}`);
+          orderData.escrowId = escrowId.toString();
+          orderData.escrowAddress = escrowAddress;
+          orderData.status = 'escrow_active';
+          break;
+        }
+      }
+    });
+    
+    // Listen for EscrowFunded events
+    escrowFactoryContract.on('EscrowFunded', async (escrowId, funder, amount, safetyDeposit, event) => {
+      console.log('💰 EscrowFunded Event:', {
+        escrowId: escrowId.toString(),
+        funder,
+        amount: ethers.formatEther(amount),
+        safetyDeposit: ethers.formatEther(safetyDeposit)
+      });
+      
+      // Update related order status
+      for (const [orderId, orderData] of activeOrders.entries()) {
+        if (orderData.escrowId === escrowId.toString()) {
+          console.log(`✅ Escrow ${escrowId} funded for order ${orderId}`);
+          orderData.status = 'escrow_funded';
+          // Here we can trigger Stellar side operations
+          break;
+        }
+      }
+    });
+    
+    console.log('✅ EscrowFactory event listeners set up successfully');
+  } catch (error) {
+    console.error('❌ Failed to setup EscrowFactory events:', error);
+  }
+
+  // Admin endpoints - must be inside initializeRelayer function
+  
+  // Admin endpoint to authorize relayer
+  app.post('/api/admin/authorize-relayer', async (req, res) => {
+    try {
+      console.log('🔐 Authorizing relayer as resolver...');
+      
+      const { adminPrivateKey } = req.body;
+      if (!adminPrivateKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Admin private key required'
+        });
+      }
+      
+      const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+      const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, adminWallet);
+      
+      // Get relayer address
+      const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+      const relayerWallet = new ethers.Wallet(relayerPrivateKey);
+      const relayerAddress = relayerWallet.address;
+      
+      // Authorize relayer as resolver
+      const contractWithSigner = escrowFactoryContract as any;
+      const tx = await contractWithSigner.authorizeResolver(relayerAddress);
+      
+      console.log(`📝 Authorization tx sent: ${tx.hash}`);
+      const receipt = await tx.wait();
+      console.log(`✅ Relayer ${relayerAddress} authorized successfully`);
+      
+      res.json({
+        success: true,
+        relayerAddress,
+        txHash: tx.hash,
+        message: 'Relayer authorized as resolver'
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to authorize relayer:', error);
+      res.status(500).json({
+        success: false,
+        error: getErrorMessage(error),
+        message: 'Relayer authorization failed'
+      });
+    }
+  });
+
+  // Check relayer authorization status
+  app.get('/api/admin/relayer-status', async (req, res) => {
+    try {
+      const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      
+      const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
+      const relayerWallet = new ethers.Wallet(relayerPrivateKey);
+      const relayerAddress = relayerWallet.address;
+      
+      // Check authorization status
+      const contractWithProvider = escrowFactoryContract as any;
+      const isAuthorized = await contractWithProvider.authorizedResolvers(relayerAddress);
+      
+      res.json({
+        success: true,
+        relayerAddress,
+        isAuthorized,
+        status: isAuthorized ? 'Authorized' : 'Not Authorized',
+        message: isAuthorized ? 'Relayer can create escrows' : 'Relayer needs authorization'
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to check relayer status:', error);
+      res.status(500).json({
+        success: false,
+        error: getErrorMessage(error),
+        message: 'Status check failed'
+      });
+    }
+  });
+
+  console.log('✅ Admin endpoints registered');
+
   // Start HTTP server
   const server = app.listen(RELAYER_CONFIG.port, () => {
     console.log(`🌐 HTTP server started on port ${RELAYER_CONFIG.port}`);
@@ -1598,7 +1871,142 @@ app.post('/presets/optimize', async (req, res) => {
   }
 });
 
+  // Test endpoint for EscrowFactory
+  app.get('/api/escrow/test', async (req, res) => {
+    try {
+      console.log('🧪 Testing EscrowFactory connection...');
+      
+      const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      
+      // Get basic contract info
+      const [totalEscrows, minSafetyDeposit, maxSafetyDeposit] = await Promise.all([
+        escrowFactoryContract.totalEscrows(),
+        escrowFactoryContract.MIN_SAFETY_DEPOSIT(),
+        escrowFactoryContract.MAX_SAFETY_DEPOSIT()
+      ]);
+      
+      res.json({
+        success: true,
+        escrowFactoryAddress: ESCROW_FACTORY_ADDRESS,
+        contractInfo: {
+          totalEscrows: totalEscrows.toString(),
+          minSafetyDeposit: ethers.formatEther(minSafetyDeposit),
+          maxSafetyDeposit: ethers.formatEther(maxSafetyDeposit)
+        },
+        message: 'EscrowFactory bağlantısı başarılı!'
+      });
+    } catch (error) {
+      console.error('❌ EscrowFactory test failed:', error);
+      res.status(500).json({
+        success: false,
+        error: getErrorMessage(error),
+        message: 'EscrowFactory test başarısız'
+      });
+    }
+  });
 
+  // Get escrow details endpoint
+  app.get('/api/escrow/:escrowId', async (req, res) => {
+    try {
+      const escrowId = req.params.escrowId;
+      console.log(`🔍 Getting escrow details for ID: ${escrowId}`);
+      
+      const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      
+      const escrowData = await escrowFactoryContract.getEscrow(escrowId);
+      
+      res.json({
+        success: true,
+        escrowId,
+        escrowData: {
+          escrowAddress: escrowData.escrowAddress,
+          config: {
+            token: escrowData.config.token,
+            amount: ethers.formatEther(escrowData.config.amount),
+            hashLock: escrowData.config.hashLock,
+            timelock: new Date(Number(escrowData.config.timelock) * 1000).toISOString(),
+            beneficiary: escrowData.config.beneficiary,
+            refundAddress: escrowData.config.refundAddress,
+            safetyDeposit: ethers.formatEther(escrowData.config.safetyDeposit),
+            chainId: escrowData.config.chainId.toString(),
+            stellarTxHash: escrowData.config.stellarTxHash,
+            isPartialFillEnabled: escrowData.config.isPartialFillEnabled
+          },
+          status: escrowData.status,
+          createdAt: new Date(Number(escrowData.createdAt) * 1000).toISOString(),
+          filledAmount: ethers.formatEther(escrowData.filledAmount),
+          safetyDepositPaid: ethers.formatEther(escrowData.safetyDepositPaid),
+          resolver: escrowData.resolver,
+          isActive: escrowData.isActive
+        }
+      });
+    } catch (error) {
+      console.error('❌ Get escrow failed:', error);
+      res.status(500).json({
+        success: false,
+        error: getErrorMessage(error),
+        message: 'Escrow bilgileri alınamadı'
+      });
+    }
+  });
+
+  // Auto-authorize user endpoint  
+  app.post('/api/admin/authorize-user', async (req, res) => {
+    try {
+      console.log('🔐 Auto-authorizing user as resolver...');
+      
+      const { userAddress, adminPrivateKey } = req.body;
+      if (!userAddress || !adminPrivateKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'User address and admin private key required'
+        });
+      }
+      
+      const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
+      const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
+      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, adminWallet);
+      
+      // Check if already authorized
+      const contractWithProvider = escrowFactoryContract as any;
+      const isAlreadyAuthorized = await contractWithProvider.authorizedResolvers(userAddress);
+      
+      if (isAlreadyAuthorized) {
+        return res.json({
+          success: true,
+          userAddress,
+          message: 'User already authorized',
+          alreadyAuthorized: true
+        });
+      }
+      
+      // Authorize user as resolver
+      const contractWithSigner = escrowFactoryContract as any;
+      const tx = await contractWithSigner.authorizeResolver(userAddress);
+      
+      console.log(`📝 User authorization tx sent: ${tx.hash}`);
+      const receipt = await tx.wait();
+      console.log(`✅ User ${userAddress} authorized successfully`);
+      
+      res.json({
+        success: true,
+        userAddress,
+        txHash: tx.hash,
+        message: 'User authorized as resolver',
+        alreadyAuthorized: false
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to authorize user:', error);
+      res.status(500).json({
+        success: false,
+        error: getErrorMessage(error),
+        message: 'User authorization failed'
+      });
+    }
+  });
 
 // Start relayer (always initialize when module loads)
 initializeRelayer().catch(error => {
