@@ -139,9 +139,15 @@ async function initializeRelayer() {
   console.log('🔄 Initializing FusionBridge Relayer Service');
   console.log('============================================');
   
-  // Configure Express middleware
-  app.use(cors());
-  app.use(express.json());
+  // Configure Express middleware with enhanced CORS
+  app.use(cors({
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true
+  }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true }));
   
   // Validate configuration
   validateConfig();
@@ -506,12 +512,20 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         console.log('💰 XLM→ETH: Sending ETH to user...');
         
         try {
-          // Load ethers and connect to Sepolia
-          const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-          const relayerWallet = new ethers.Wallet(
-            process.env.RELAYER_PRIVATE_KEY || '0x' + '0'.repeat(64), 
-            provider
-          );
+          // Load ethers and connect to Sepolia - REAL MODE ONLY
+          const rpcUrl = RELAYER_CONFIG.ethereum.rpcUrl;
+          const privateKey = process.env.RELAYER_PRIVATE_KEY;
+          
+          if (!privateKey) {
+            throw new Error('RELAYER_PRIVATE_KEY environment variable is required');
+          }
+          
+          console.log('💰 REAL MODE: Sending actual ETH transaction (process endpoint)');
+          console.log('🔗 RPC URL:', rpcUrl);
+          console.log('🔑 Using real private key:', privateKey.substring(0, 10) + '...');
+          
+          const provider = new ethers.JsonRpcProvider(rpcUrl);
+          const relayerWallet = new ethers.Wallet(privateKey, provider);
           
           console.log('🔑 Relayer ETH address:', relayerWallet.address);
           
@@ -527,10 +541,12 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         } else {
           // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
           const ethAmountDecimal = parseFloat(orderAmount || '0.1') / exchangeRate;
-          ethAmount = ethers.parseEther(ethAmountDecimal.toFixed(18)).toString();
+          // Round to avoid decimal precision issues and convert to wei properly
+          const ethAmountFixed = Math.floor(ethAmountDecimal * 1e18); // Convert to wei as integer
+          ethAmount = ethAmountFixed.toString(); // Use wei directly as string
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (XLM→ETH)');
-          console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
+          console.log('🎯 ETH amount to send:', (parseInt(ethAmount) / 1e18).toFixed(6), 'ETH');
           console.log('🏠 Sending to user address:', userEthAddress);
           
           // Create ETH transfer transaction
@@ -568,7 +584,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
               },
               ethereum: {
                 txId: ethTxReceipt?.hash,
-                amount: `${ethers.formatEther(ethAmount)} ETH`,
+                amount: `${(parseInt(ethAmount) / 1e18).toFixed(6)} ETH`,
                 destination: userEthAddress,
                 status: 'completed'
               }
@@ -714,6 +730,9 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
   app.post('/api/orders/xlm-to-eth', async (req, res) => {
     try {
       console.log('🔍 DEBUG: XLM→ETH endpoint received request body:', JSON.stringify(req.body, null, 2));
+      console.log('🔍 DEBUG: Request headers:', JSON.stringify(req.headers, null, 2));
+      console.log('🔍 DEBUG: Environment check - ETHEREUM_RPC_URL:', process.env.ETHEREUM_RPC_URL ? 'SET' : 'NOT SET');
+      console.log('🔍 DEBUG: Environment check - RELAYER_PRIVATE_KEY:', process.env.RELAYER_PRIVATE_KEY ? 'SET' : 'NOT SET');
       
       const { orderId, stellarTxHash, stellarAddress, ethAddress } = req.body;
       
@@ -745,12 +764,20 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
       console.log('🎯 XLM→ETH: Sending ETH to user...', { userEthAddress, orderAmount });
       
       try {
-        // Load ethers and connect to Sepolia
-        const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-        const relayerWallet = new ethers.Wallet(
-          process.env.RELAYER_PRIVATE_KEY || '0x' + '0'.repeat(64), 
-          provider
-        );
+        // Load ethers and connect to Sepolia - REAL MODE ONLY
+        const rpcUrl = RELAYER_CONFIG.ethereum.rpcUrl;
+        const privateKey = process.env.RELAYER_PRIVATE_KEY;
+        
+        if (!privateKey) {
+          throw new Error('RELAYER_PRIVATE_KEY environment variable is required');
+        }
+        
+        console.log('💰 REAL MODE: Sending actual ETH transaction');
+        console.log('🔗 RPC URL:', rpcUrl);
+        console.log('🔑 Using real private key:', privateKey.substring(0, 10) + '...');
+        
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const relayerWallet = new ethers.Wallet(privateKey, provider);
         
         console.log('🔑 Relayer ETH address:', relayerWallet.address);
         
@@ -766,10 +793,12 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         } else {
           // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
           const ethAmountDecimal = parseFloat(orderAmount) / exchangeRate;
-          ethAmount = ethers.parseEther(ethAmountDecimal.toFixed(18)).toString();
+          // Round to avoid decimal precision issues and convert to wei properly
+          const ethAmountFixed = Math.floor(ethAmountDecimal * 1e18); // Convert to wei as integer
+          ethAmount = ethAmountFixed.toString(); // Use wei directly as string
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (dedicated endpoint)');
-        console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
+        console.log('🎯 ETH amount to send:', (parseInt(ethAmount) / 1e18).toFixed(6), 'ETH');
         console.log('🏠 Sending to user address:', userEthAddress);
         
         // Create ETH transfer transaction
@@ -808,7 +837,7 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
             },
             ethereum: {
               txId: ethTxReceipt?.hash,
-              amount: `${ethers.formatEther(ethAmount)} ETH`,
+              amount: `${(parseInt(ethAmount) / 1e18).toFixed(6)} ETH`,
               destination: userEthAddress,
               status: 'completed'
             }
@@ -819,9 +848,18 @@ console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
         
       } catch (ethError: any) {
         console.error('❌ ETH transaction failed:', ethError);
+        console.error('❌ Full ETH error details:', {
+          name: ethError.name,
+          message: ethError.message,
+          code: ethError.code,
+          stack: ethError.stack,
+          data: ethError.data
+        });
         res.status(500).json({
           error: 'ETH release failed',
-          details: ethError.message
+          details: ethError.message,
+          errorCode: ethError.code,
+          errorName: ethError.name
         });
       }
 
@@ -1275,55 +1313,6 @@ app.get('/order/:orderId/resolver-recommendations', async (req, res) => {
     res.json(createSuccessResponse(recommendations));
   } catch (error) {
     res.status(500).json(createErrorResponse('Failed to get resolver recommendations', getErrorMessage(error)));
-  }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  try {
-    const monitor = getMonitor();
-    const metrics = monitor.getMetrics();
-    const systemStatus = monitor.getSystemStatus();
-    
-    res.json({
-      status: systemStatus,
-      timestamp: new Date().toISOString(),
-      service: 'FusionBridge Relayer',
-      version: metrics.version,
-      uptime: metrics.uptime,
-      environment: metrics.environment,
-      services: metrics.services.map(s => ({
-        name: s.name,
-        status: s.status,
-        responseTime: s.responseTime,
-        lastCheck: s.lastCheck
-      })),
-      system: {
-        memoryUsage: Math.round(metrics.system.memoryUsage.percentage * 100),
-        cpuUsage: Math.round(metrics.system.cpuUsage),
-        loadAverage: metrics.system.loadAverage[0]
-      },
-      network: {
-        ethereum: {
-          connected: metrics.network.ethereum.connected,
-          blockNumber: metrics.network.ethereum.blockNumber,
-          responseTime: metrics.network.ethereum.responseTime
-        },
-        stellar: {
-          connected: metrics.network.stellar.connected,
-          ledgerNumber: metrics.network.stellar.ledgerNumber,
-          responseTime: metrics.network.stellar.responseTime
-        }
-      }
-    });
-  } catch (error) {
-    console.error('❌ Health check failed:', error);
-    res.status(500).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      service: 'FusionBridge Relayer',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
   }
 });
 

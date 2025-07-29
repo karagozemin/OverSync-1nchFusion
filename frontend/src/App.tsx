@@ -48,25 +48,31 @@ function App() {
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
-    console.log('MetaMask connect clicked!'); // Debug
+    console.log('🦊 MetaMask connect clicked!');
     setIsConnecting(true);
     setConnectionError('');
     
     try {
       if (!window.ethereum) {
+        console.error('❌ MetaMask not found');
         throw new Error('MetaMask bulunamadı! Lütfen MetaMask yükleyin.');
       }
 
+      console.log('🦊 Requesting MetaMask accounts...');
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts'
       });
 
+      console.log('🦊 MetaMask accounts received:', accounts);
+
       if (accounts.length > 0) {
+        console.log('🦊 MetaMask connected successfully:', accounts[0]);
         setEthAddress(accounts[0]);
         setShowWalletMenu(false);
         toast.success('MetaMask Connected!', `Connected to ${accounts[0].slice(0, 8)}...${accounts[0].slice(-6)}`);
       }
     } catch (error: any) {
+      console.error('❌ MetaMask connection error:', error);
       setConnectionError(`MetaMask: ${error.message}`);
       toast.error('Connection Failed', error.message);
     } finally {

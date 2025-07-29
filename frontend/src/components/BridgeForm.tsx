@@ -249,34 +249,149 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const fromToken = direction === 'eth_to_xlm' ? ETH_TOKEN : XLM_TOKEN;
   const toToken = direction === 'eth_to_xlm' ? XLM_TOKEN : ETH_TOKEN;
 
-  // Balance fetch function
+  // Balance fetch function with rate limiting and retry mechanism
   const fetchBalance = async () => {
+    console.log('🔍 Fetching balance...', { direction, ethAddress, stellarAddress });
+    
+    // Rate limiting: Don't fetch too frequently
+    const now = Date.now();
+    const lastFetch = (window as any).lastBalanceFetch || 0;
+    const minInterval = 2000; // Minimum 2 seconds between fetches
+    
+    if (now - lastFetch < minInterval) {
+      console.log('⏳ Rate limiting: Skipping balance fetch (too soon)');
+      return;
+    }
+    
+    (window as any).lastBalanceFetch = now;
+    
     try {
       if (direction === 'eth_to_xlm' && ethAddress && window.ethereum) {
-        // ETH Balance
-        const ethBalance = await window.ethereum.request({
-          method: 'eth_getBalance',
-          params: [ethAddress, 'latest']
-        });
-        const balanceInEth = (parseInt(ethBalance, 16) / Math.pow(10, 18)).toFixed(4);
-        setBalance(balanceInEth);
+        console.log('💰 Fetching ETH balance for:', ethAddress);
+        
+        // Add retry mechanism for MetaMask RPC calls
+        let retries = 3;
+        let ethBalance = null;
+        
+        while (retries > 0 && !ethBalance) {
+          try {
+            ethBalance = await window.ethereum.request({
+              method: 'eth_getBalance',
+              params: [ethAddress, 'latest']
+            });
+            break;
+          } catch (rpcError: any) {
+            console.warn(`⚠️ ETH balance fetch attempt failed (${4 - retries}/3):`, rpcError.message);
+            retries--;
+            
+            if (retries > 0) {
+              // Wait with exponential backoff
+              const delay = (4 - retries) * 1000; // 1s, 2s, 3s
+              console.log(`⏳ Retrying in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw rpcError;
+            }
+          }
+        }
+        
+        if (ethBalance) {
+          console.log('💰 Raw ETH balance:', ethBalance);
+          const balanceInEth = (parseInt(ethBalance, 16) / Math.pow(10, 18)).toFixed(4);
+          console.log('💰 Formatted ETH balance:', balanceInEth);
+          setBalance(balanceInEth);
+        }
+        
       } else if (direction === 'xlm_to_eth' && stellarAddress) {
-        // Stellar Balance - using Horizon API
-        const response = await fetch(`https://horizon-testnet.stellar.org/accounts/${stellarAddress}`);
-        const accountData = await response.json();
-        const xlmBalance = accountData.balances.find((b: any) => b.asset_type === 'native')?.balance || '0';
-        setBalance(parseFloat(xlmBalance).toFixed(4));
+        console.log('⭐ Fetching XLM balance for:', stellarAddress);
+        
+        // Stellar balance with retry
+        let retries = 3;
+        let accountData = null;
+        
+        while (retries > 0 && !accountData) {
+          try {
+            const response = await fetch(`https://horizon-testnet.stellar.org/accounts/${stellarAddress}`);
+            
+            if (!response.ok) {
+              throw new Error(`Stellar API error: ${response.status}`);
+            }
+            
+            accountData = await response.json();
+            break;
+          } catch (stellarError: any) {
+            console.warn(`⚠️ XLM balance fetch attempt failed (${4 - retries}/3):`, stellarError.message);
+            retries--;
+            
+            if (retries > 0) {
+              const delay = (4 - retries) * 1000;
+              console.log(`⏳ Retrying in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw stellarError;
+            }
+          }
+        }
+        
+        if (accountData) {
+          console.log('⭐ Stellar account data:', accountData);
+          const xlmBalance = accountData.balances.find((b: any) => b.asset_type === 'native')?.balance || '0';
+          console.log('⭐ XLM balance:', xlmBalance);
+          setBalance(parseFloat(xlmBalance).toFixed(4));
+        }
+        
+      } else {
+        console.log('❌ Balance fetch conditions not met:', { 
+          direction, 
+          ethAddress: !!ethAddress, 
+          stellarAddress: !!stellarAddress,
+          hasEthereum: !!window.ethereum 
+        });
+        setBalance('0');
       }
-    } catch (error) {
-      console.error('Balance fetch error:', error);
-      setBalance('0');
+    } catch (error: any) {
+      console.error('❌ Balance fetch error:', error);
+      
+      // Show user-friendly error message for circuit breaker
+      if (error.code === -32603 && error.message?.includes('circuit breaker')) {
+        console.log('🔄 MetaMask circuit breaker is active - this is temporary');
+        
+        // Show toast notification to user
+        if ((window as any).toast) {
+          (window as any).toast.error(
+            'MetaMask Geçici Sorunu', 
+            'MetaMask çok fazla istek aldı. Lütfen 1-2 dakika bekleyin veya MetaMask\'i yeniden başlatın.'
+          );
+        }
+        
+        // Don't reset balance to 0, keep the last known value unless it's empty
+        if (balance === '0' || balance === '') {
+          setBalance('Loading...');
+        }
+        
+        // Set a longer retry interval for circuit breaker recovery
+        setTimeout(() => {
+          console.log('🔄 Attempting balance fetch after circuit breaker cooldown...');
+          fetchBalance();
+        }, 10000); // Retry after 10 seconds
+        
+      } else {
+        setBalance('0');
+      }
     }
   };
 
-  // Fetch balance when direction or addresses change
+  // Fetch balance when direction or addresses change - with debounce
   useEffect(() => {
     if ((direction === 'eth_to_xlm' && ethAddress) || (direction === 'xlm_to_eth' && stellarAddress)) {
-      fetchBalance();
+      // Debounce balance fetching to prevent too many calls
+      const timeoutId = setTimeout(() => {
+        fetchBalance();
+      }, 500); // Wait 500ms after last change
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      setBalance('0');
     }
   }, [direction, ethAddress, stellarAddress]);
   
@@ -341,21 +456,30 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    console.log('🚀 Form submitted:', { amount, ethAddress, stellarAddress, direction });
+    
     if (!amount || !ethAddress || !stellarAddress) {
+      console.error('❌ Missing required fields:', { amount: !!amount, ethAddress: !!ethAddress, stellarAddress: !!stellarAddress });
+      alert('Lütfen tüm alanları doldurun ve cüzdanları bağlayın.');
       return;
     }
     
     if (!window.ethereum) {
-      alert('MetaMask not found! Please install MetaMask.');
+      alert('MetaMask bulunamadı! Lütfen MetaMask yükleyin.');
       return;
     }
     
     setIsSubmitting(true);
+    setStatusMessage('Hazırlanıyor...');
     
     try {
       // Check if connected to Sepolia
+      console.log('🔗 Checking network...');
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      console.log('🔗 Current chain ID:', chainId);
+      
       if (chainId !== SEPOLIA_CHAIN_ID) {
+        console.log('🔗 Switching to Sepolia...');
         try {
           await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
@@ -385,6 +509,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       }
 
       console.log('🔄 Creating bridge order via Relayer API...');
+      setStatusMessage('Order oluşturuluyor...');
       
       // Create order request to relayer
       const orderRequest = {
@@ -399,6 +524,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         exchangeRate: exchangeRate // Include real-time rate
       };
       
+      console.log('📋 Order request:', orderRequest);
+      
       // Send request to relayer
       const response = await fetch(`${API_BASE_URL}/api/orders/create`, {
         method: 'POST',
@@ -408,14 +535,16 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         body: JSON.stringify(orderRequest)
       });
       
+      console.log('📥 API Response status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create order');
+        console.error('❌ API Error:', errorData);
+        throw new Error(errorData.error || `API Error: ${response.status}`);
       }
       
       const result = await response.json();
       console.log('✅ Order created via relayer:', result);
-      console.log('🔍 Approval transaction format:', result.approvalTransaction);
       
       // Handle different transaction types based on direction
       if (direction === 'eth_to_xlm' && result.approvalTransaction) {
@@ -719,54 +848,76 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           // Process the order on backend
           console.log('⚡ Triggering ETH release...');
           
+          const requestBody = {
+            orderId: result.orderId,
+            stellarTxHash: submitResult.hash,
+            stellarAddress: stellarAddress,
+            ethAddress: ethAddress
+          };
+          
+          console.log('🔍 FRONTEND DEBUG: XLM→ETH request body:', JSON.stringify(requestBody, null, 2));
+          console.log('🔍 FRONTEND DEBUG: API_BASE_URL:', API_BASE_URL);
+          
           try {
             const processResponse = await fetch(`${API_BASE_URL}/api/orders/xlm-to-eth`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                orderId: result.orderId,
-                stellarTxHash: submitResult.hash,
-                stellarAddress: stellarAddress,
-                ethAddress: ethAddress
-              })
+              body: JSON.stringify(requestBody)
             });
             
             if (processResponse.ok) {
               const processResult = await processResponse.json();
               console.log('✅ ETH release initiated:', processResult);
-              console.log('💰 Expected ETH amount:', result.orderData.targetAmount, 'wei');
+              console.log('💰 Expected ETH amount:', result.orderData?.targetAmount || 'unknown', 'wei');
               
               // Update transaction status to completed
               updateTransactionStatus(result.orderId, 'completed', {
                 ethTxHash: processResult.ethTxId
               });
+              
+              // Update status to completed
+              setStatusMessage('Tamamlandı ✅');
+              setIsSubmitting(false);
+              
             } else {
+              const errorData = await processResponse.text();
               console.error('❌ ETH release failed:', processResponse.status);
+              console.error('❌ Error response body:', errorData);
               
-              // Development: Show success even if processing fails
-              console.log('🚀 Development mode: Showing success despite ETH processing failure');
+              // Try to parse error details
+              try {
+                const errorJson = JSON.parse(errorData);
+                console.error('❌ Parsed error details:', errorJson);
+              } catch (parseError) {
+                console.error('❌ Could not parse error response as JSON');
+              }
               
-              // Update transaction status to completed (development mode)
-              updateTransactionStatus(result.orderId, 'completed');
+              // Update status to failed
+              setStatusMessage('ETH gönderimi başarısız ❌');
+              setIsSubmitting(false);
               
-              // Show success anyway for development
-              setOrderId(submitResult.hash);
-              setOrderCreated(true);
+              // Show error to user
+              alert(`ETH gönderimi başarısız: ${processResponse.status} - ${errorData}`);
             }
-          } catch (processError) {
-            console.error('❌ ETH release error:', processError);
+          } catch (processError: any) {
+            console.error('❌ ETH release network error:', processError);
+            console.error('❌ Error details:', {
+              message: processError.message,
+              name: processError.name,
+              stack: processError.stack
+            });
             
-            // Development: Show success even if processing throws error
-            console.log('🚀 Development mode: Showing success despite ETH processing error');
+            // Update status to failed
+            setStatusMessage('Ağ hatası ❌');
+            setIsSubmitting(false);
             
-            // Update transaction status to completed (development mode)
-            updateTransactionStatus(result.orderId, 'completed');
+            // Update transaction status to failed
+            updateTransactionStatus(result.orderId, 'failed');
             
-            // Show success anyway for development
-            setOrderId(submitResult.hash);
-            setOrderCreated(true);
+            // Show error to user  
+            alert(`ETH gönderimi ağ hatası: ${processError.message}`);
           }
 
         } catch (stellarError: any) {
