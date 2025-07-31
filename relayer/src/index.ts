@@ -58,8 +58,8 @@ const HTLC_BRIDGE_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
 ];
 
-// GERÇEK 1inch EscrowFactory ABI (etherscan'dan doğrulandı)
-const ESCROW_FACTORY_ABI = [
+// MAINNET: Gerçek 1inch EscrowFactory ABI
+const MAINNET_ESCROW_FACTORY_ABI = [
   `function createDstEscrow(
     (bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) dstImmutables,
     uint256 srcCancellationTimestamp
@@ -72,6 +72,30 @@ const ESCROW_FACTORY_ABI = [
   "event SrcEscrowCreated((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) srcImmutables, (uint256 maker, uint256 amount, uint256 token, uint256 safetyDeposit, uint256 chainId) dstImmutablesComplement)",
   "event DstEscrowCreated(address escrow, bytes32 hashlock, uint256 taker)"
 ];
+
+// TESTNET: Bizim custom EscrowFactory ABI (eski hali)
+const TESTNET_ESCROW_FACTORY_ABI = [
+  "function createEscrow((address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config) external payable returns (uint256 escrowId)",
+  "function fundEscrow(uint256 escrowId) external",
+  "function claimEscrow(uint256 escrowId, bytes32 preimage) external",
+  "function refundEscrow(uint256 escrowId) external",
+  "function getEscrow(uint256 escrowId) external view returns (tuple(address escrowAddress, tuple(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config, uint8 status, uint256 createdAt, uint256 filledAmount, uint256 safetyDepositPaid, address resolver, bool isActive))",
+  "function authorizeResolver(address resolver) external",
+  "function authorizedResolvers(address resolver) external view returns (bool)",
+  "function totalEscrows() external view returns (uint256)",
+  "function MIN_SAFETY_DEPOSIT() external view returns (uint256)",
+  "function MAX_SAFETY_DEPOSIT() external view returns (uint256)",
+  // Events
+  "event EscrowCreated(uint256 indexed escrowId, address indexed escrowAddress, address indexed resolver, address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 safetyDeposit, uint256 chainId)",
+  "event EscrowFunded(uint256 indexed escrowId, address indexed funder, uint256 amount, uint256 safetyDeposit)",
+  "event EscrowClaimed(uint256 indexed escrowId, address indexed claimer, uint256 amount, bytes32 preimage)",
+  "event EscrowRefunded(uint256 indexed escrowId, address indexed refundee, uint256 amount, uint256 safetyDeposit)"
+];
+
+// Dinamik ABI seçici
+function getEscrowFactoryABI(isMainnet: boolean) {
+  return isMainnet ? MAINNET_ESCROW_FACTORY_ABI : TESTNET_ESCROW_FACTORY_ABI;
+}
 import { ethereumListener } from './ethereum-listener.js';
 import { quoterService } from './quoter-service.js';
 import { ordersService } from './orders.js';
@@ -138,16 +162,16 @@ export const RELAYER_CONFIG = {
     minConfirmations: Number(process.env.MIN_CONFIRMATION_BLOCKS) || 6,
   },
   
-  // Stellar configuration - Auto-detects based on network
+  // Stellar configuration - DYNAMIC based on DEFAULT_NETWORK_MODE
   stellar: {
-    network: process.env.STELLAR_NETWORK || 'testnet',
+    network: process.env.STELLAR_NETWORK || DEFAULT_NETWORK_MODE, // ✅ DEFAULT_NETWORK_MODE kullan!
     horizonUrl: process.env.STELLAR_HORIZON_URL || (
-      (process.env.STELLAR_NETWORK === 'mainnet') 
+      (DEFAULT_NETWORK_MODE === 'mainnet') 
         ? 'https://horizon.stellar.org' 
         : 'https://horizon-testnet.stellar.org'
     ),
     networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || (
-      (process.env.STELLAR_NETWORK === 'mainnet')
+      (DEFAULT_NETWORK_MODE === 'mainnet')
         ? 'Public Global Stellar Network ; September 2015'
         : 'Test SDF Network ; September 2015'
     ),
@@ -340,8 +364,12 @@ async function initializeRelayer() {
         .map(order => ({
           id: order.orderId,
           txHash: order.ethTxHash || order.stellarTxHash || order.orderId,
-          fromNetwork: order.direction === 'eth-to-xlm' ? 'ETH Sepolia' : 'Stellar Testnet',
-          toNetwork: order.direction === 'eth-to-xlm' ? 'Stellar Testnet' : 'ETH Sepolia',
+          fromNetwork: order.direction === 'eth-to-xlm' ? 
+            (DEFAULT_NETWORK_MODE === 'mainnet' ? 'ETH Mainnet' : 'ETH Sepolia') : 
+            (DEFAULT_NETWORK_MODE === 'mainnet' ? 'Stellar Mainnet' : 'Stellar Testnet'),
+          toNetwork: order.direction === 'eth-to-xlm' ? 
+            (DEFAULT_NETWORK_MODE === 'mainnet' ? 'Stellar Mainnet' : 'Stellar Testnet') : 
+            (DEFAULT_NETWORK_MODE === 'mainnet' ? 'ETH Mainnet' : 'ETH Sepolia'),
           fromToken: order.direction === 'eth-to-xlm' ? 'ETH' : 'XLM',
           toToken: order.direction === 'eth-to-xlm' ? 'XLM' : 'ETH',
           amount: order.amount || '0',
@@ -376,10 +404,28 @@ async function initializeRelayer() {
   
   app.post('/api/orders/create', async (req, res) => {
     try {
+      console.log('🔍 RAW REQUEST BODY:', JSON.stringify(req.body, null, 2));
+      
       const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction, exchangeRate, network, networkMode } = req.body;
+      
+      console.log('🎯 EXTRACTED VALUES:', {
+        amount: amount,
+        amountType: typeof amount,
+        amountLength: amount ? amount.length : 'undefined',
+        amountString: String(amount)
+      });
       
       // Validate required fields
       if (!fromChain || !toChain || !fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
+        console.log('❌ VALIDATION FAILED:', {
+          fromChain: !!fromChain,
+          toChain: !!toChain, 
+          fromToken: !!fromToken,
+          toToken: !!toToken,
+          amount: !!amount,
+          ethAddress: !!ethAddress,
+          stellarAddress: !!stellarAddress
+        });
         return res.status(400).json({
           error: 'Missing required fields',
           required: ['fromChain', 'toChain', 'fromToken', 'toToken', 'amount', 'ethAddress', 'stellarAddress']
@@ -502,8 +548,8 @@ async function initializeRelayer() {
           
           const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
           
-          // Encode EscrowFactory createDstEscrow call (DOĞRU ABI!)
-          const escrowInterface = new ethers.Interface(ESCROW_FACTORY_ABI);
+          // Encode EscrowFactory createDstEscrow call (DOĞRU MAINNET ABI!)
+          const escrowInterface = new ethers.Interface(getEscrowFactoryABI(true)); // true = mainnet
           const encodedData = escrowInterface.encodeFunctionData("createDstEscrow", [
             dstImmutables,
             srcCancellationTimestamp
@@ -538,103 +584,93 @@ async function initializeRelayer() {
           return;
         }
         
-        // TESTNET: Use GERÇEK EscrowFactory createDstEscrow (aynı ABI mainnet ile!)
+        // TESTNET: Use ESKİ custom EscrowFactory createEscrow (bizim testnet contract'ımız)
         
         // Generate HTLC parameters
         const secretBytes = new Uint8Array(32);
         crypto.getRandomValues(secretBytes);
         const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-        const hashLock = ethers.keccak256(secret);
-        
-        // amount is already a string like "0.00012", convert to wei
-        const userAmountWei = ethers.parseEther(amount);
-        console.log(`💰 TESTNET User Amount: ${amount} ETH = ${userAmountWei.toString()} wei`);
-        
-        // Calculate safety deposit (minimum required by escrow factory)
-        const safetyDepositPercentage = 2; // 2% safety deposit
-        const safetyDeposit = userAmountWei * BigInt(safetyDepositPercentage) / BigInt(100);
-        const MIN_SAFETY_DEPOSIT = ethers.parseEther('0.001'); // 0.001 ETH minimum
-        const actualSafetyDeposit = safetyDeposit > MIN_SAFETY_DEPOSIT ? safetyDeposit : MIN_SAFETY_DEPOSIT;
-        
-        // Generate order hash for protocol
-        const orderHash = ethers.keccak256(
-          ethers.solidityPacked(
-            ['address', 'uint256', 'bytes32', 'uint256'],
-            [normalizedEthAddress, userAmountWei, hashLock, Math.floor(Date.now() / 1000)]
-          )
-        );
+        const hashLock = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
         
         const orderData = {
           orderId,
-          orderHash,
-          hashLock: hashLock,
+          token: '0x0000000000000000000000000000000000000000', // ETH
+          amount: (parseFloat(amount) * 1e18).toString(),
+          hashLock,
+          timelock: Math.floor(Date.now() / 1000) + 7201, // 2+ hours
+          feeRate: 100, // 1%
+          beneficiary: stellarAddress,
+          refundAddress: normalizedEthAddress,
+          destinationChainId: 1, // Stellar
+          stellarTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          partialFillEnabled: false,
           secret: secret,
-          ethAddress: normalizedEthAddress,
-          stellarAddress,
-          amount: userAmountWei.toString(),
-          safetyDeposit: actualSafetyDeposit.toString(),
-          exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
-          contractType: 'ONEINCH_ESCROW_FACTORY_TESTNET_DST',
-          status: 'pending_dst_escrow_deployment',
-          network: 'ethereum',
-          chainId: isMainnetRequest ? 1 : 11155111,
-          created: new Date().toISOString()
+          created: new Date().toISOString(),
+          status: 'pending_direct_escrow'
         };
 
         // Store order
-        activeOrders.set(orderId, orderData);
+        activeOrders.set(orderId, {
+          ...orderData,
+          ethAddress: normalizedEthAddress,
+          stellarAddress,
+          amount,
+          exchangeRate: exchangeRate || ETH_TO_XLM_RATE
+        });
 
         console.log('✅ TESTNET ETH→XLM Order created:', orderId);
-        console.log('🏭 TESTNET GERÇEK ESCROW MODE: User → createDstEscrow');
+        console.log('🏭 TESTNET ESKİ ESCROW MODE: User → createEscrow (bizim custom contract)');
         
-        const totalCost = userAmountWei + actualSafetyDeposit;
+        // Calculate dynamic safety deposit (minimum 1% of amount, minimum 0.001 ETH)
+        // orderData.amount is already in wei (string), convert to BigInt directly
+        const orderAmountBigInt = BigInt(orderData.amount);
+        const dynamicSafetyDeposit = orderAmountBigInt / BigInt(100); // 1% of amount
+        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH minimum
+        const actualSafetyDeposit = dynamicSafetyDeposit > MIN_SAFETY_DEPOSIT ? dynamicSafetyDeposit : MIN_SAFETY_DEPOSIT;
+        const totalCost = orderAmountBigInt + actualSafetyDeposit;
         
-        // Create IBaseEscrow.Immutables struct for createDstEscrow (aynı mainnet ile!)
-        const dstImmutables = {
-          orderHash: orderHash,
-          hashlock: hashLock,
-          maker: normalizedEthAddress, // Will be converted to uint256 by ethers
-          taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
-          token: '0x0000000000000000000000000000000000000000', // ETH as uint256
-          amount: userAmountWei.toString(),
+        // Create EscrowConfig struct (ESKİ testnet yapısı)
+        const escrowConfig = {
+          token: '0x0000000000000000000000000000000000000000', // ETH
+          amount: orderData.amount,
+          hashLock: orderData.hashLock,
+          timelock: orderData.timelock,
+          beneficiary: normalizedEthAddress,
+          refundAddress: normalizedEthAddress,
           safetyDeposit: actualSafetyDeposit.toString(),
-          timelocks: Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours
+          chainId: 11155111, // Sepolia testnet
+          stellarTxHash: ethers.ZeroHash,
+          isPartialFillEnabled: orderData.partialFillEnabled || false
         };
         
-        const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
-        
-        // Encode EscrowFactory createDstEscrow call (DOĞRU ABI!)
-        const escrowInterface = new ethers.Interface(ESCROW_FACTORY_ABI);
-        const encodedData = escrowInterface.encodeFunctionData("createDstEscrow", [
-          dstImmutables,
-          srcCancellationTimestamp
-        ]);
+        // Encode EscrowFactory createEscrow call (ESKİ testnet ABI!)
+        const escrowInterface = new ethers.Interface(getEscrowFactoryABI(false)); // false = testnet
+        const encodedData = escrowInterface.encodeFunctionData("createEscrow", [escrowConfig]);
 
         // Return direct EscrowFactory contract interaction
         res.json({
           success: true,
           orderId,
           orderData,
-          dstImmutables,
-          srcCancellationTimestamp,
+          escrowConfig,
           approvalTransaction: {
             to: getEscrowFactoryAddress(requestNetwork),       // Dynamic EscrowFactory (testnet)
             value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
-            data: encodedData,                // createDstEscrow call with struct
-            gas: '0x7A120'                    // 500000 gas limit for contract call
+            data: encodedData,                // createEscrow call with config
+            gas: '0x7A120'                    // 500000 gas limit for complex contract call
           },
-          message: '🏭 TESTNET: GERÇEK EscrowFactory createDstEscrow',
-          nextStep: 'EscrowFactory createDstEscrow çağırın',
+          message: '🏭 TESTNET: ESKİ custom EscrowFactory createEscrow',
+          nextStep: 'EscrowFactory createEscrow çağırın',
           instructions: [
-            '1. User MetaMask ile GERÇEK EscrowFactory contract\'ını çağıracak',
-            '2. createDstEscrow fonksiyonu çalışacak (DOĞRU ABI ile!)',
+            '1. User MetaMask ile bizim custom EscrowFactory contract\'ını çağıracak',
+            '2. createEscrow fonksiyonu çalışacak (ESKİ testnet ABI ile!)',
             '3. Cross-chain bridge için escrow oluşacak'
           ],
           safetyDeposit: ethers.formatEther(actualSafetyDeposit.toString()),
           totalCost: ethers.formatEther(totalCost.toString()),
-          contractType: 'ONEINCH_ESCROW_FACTORY_TESTNET_DST',
+          contractType: 'ESCROW_FACTORY_DIRECT_TESTNET',
           contractAddress: getEscrowFactoryAddress(requestNetwork),
-          note: '✅ TESTNET: GERÇEK createDstEscrow metodu - aynı mainnet ile!'
+          note: '✅ TESTNET: ESKİ createEscrow metodu - bizim custom contract!'
         });
         
       } else if (direction === 'xlm_to_eth') {
@@ -969,7 +1005,8 @@ async function initializeRelayer() {
         const result = await server.submitTransaction(transaction);
         console.log('✅ Stellar transaction successful!');
         console.log('🔍 Transaction hash:', result.hash);
-        console.log('🌐 View on StellarExpert: https://stellar.expert/explorer/testnet/tx/' + result.hash);
+        console.log('🌐 View on StellarExpert: https://stellar.expert/explorer/' + 
+          (DEFAULT_NETWORK_MODE === 'mainnet' ? 'public' : 'testnet') + '/tx/' + result.hash);
         
         // Update order status
         storedOrder.status = 'completed';
@@ -1246,7 +1283,7 @@ async function initializeRelayer() {
   // Setup EscrowFactory contract instance for event listening
   try {
     const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-    const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
+    const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), provider);
     
     // Get relayer wallet for proxy operations
     const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
@@ -1344,35 +1381,65 @@ async function initializeRelayer() {
         const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH minimum
         const actualSafetyDeposit = dynamicSafetyDeposit > MIN_SAFETY_DEPOSIT ? dynamicSafetyDeposit : MIN_SAFETY_DEPOSIT;
         
-        // Generate order hash if not present
-        const orderHash = orderData.orderHash || ethers.keccak256(
-          ethers.solidityPacked(
-            ['address', 'uint256', 'bytes32', 'uint256'],
-            [orderData.ethAddress, orderAmountBigInt, orderData.hashLock, Math.floor(Date.now() / 1000)]
-          )
-        );
-        
-        // Create IBaseEscrow.Immutables struct for createDstEscrow
-        const dstImmutables = {
-          orderHash: orderHash,
-          hashlock: orderData.hashLock,
-          maker: orderData.ethAddress, // Will be converted to uint256 by ethers
-          taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
-          token: '0x0000000000000000000000000000000000000000', // ETH as uint256
-          amount: orderData.amount,
-          safetyDeposit: actualSafetyDeposit.toString(),
-          timelocks: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60)) // 2 hours
-        };
-        
-        const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
         const totalValue = orderAmountBigInt + actualSafetyDeposit;
-        
-        // Create escrow as authorized resolver using GERÇEK createDstEscrow interface
         const contractWithSigner = contract.connect(wallet) as any;
-        const tx = await contractWithSigner.createDstEscrow(dstImmutables, srcCancellationTimestamp, {
-          value: totalValue,
-          gasLimit: 3000000
-        });
+        let tx;
+        
+        // Dinamik method selection - Mainnet vs Testnet
+        const isMainnetRequest = DEFAULT_NETWORK_MODE === 'mainnet';
+        
+        if (isMainnetRequest) {
+          // MAINNET: Use createDstEscrow
+          console.log('🏭 MAINNET: Using createDstEscrow...');
+          
+          // Generate order hash if not present
+          const orderHash = orderData.orderHash || ethers.keccak256(
+            ethers.solidityPacked(
+              ['address', 'uint256', 'bytes32', 'uint256'],
+              [orderData.ethAddress, orderAmountBigInt, orderData.hashLock, Math.floor(Date.now() / 1000)]
+            )
+          );
+          
+          // Create IBaseEscrow.Immutables struct for createDstEscrow
+          const dstImmutables = {
+            orderHash: orderHash,
+            hashlock: orderData.hashLock,
+            maker: orderData.ethAddress, // Will be converted to uint256 by ethers
+            taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
+            token: '0x0000000000000000000000000000000000000000', // ETH as uint256
+            amount: orderData.amount,
+            safetyDeposit: actualSafetyDeposit.toString(),
+            timelocks: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60)) // 2 hours
+          };
+          
+          const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
+          
+          tx = await contractWithSigner.createDstEscrow(dstImmutables, srcCancellationTimestamp, {
+            value: totalValue,
+            gasLimit: 3000000
+          });
+        } else {
+          // TESTNET: Use createEscrow
+          console.log('🏭 TESTNET: Using createEscrow...');
+          
+          const escrowConfig = {
+            token: '0x0000000000000000000000000000000000000000', // ETH
+            amount: orderData.amount,
+            hashLock: orderData.hashLock,
+            timelock: orderData.timelock,
+            beneficiary: orderData.ethAddress,
+            refundAddress: orderData.ethAddress,
+            safetyDeposit: actualSafetyDeposit.toString(),
+            chainId: 11155111, // Sepolia
+            stellarTxHash: ethers.ZeroHash,
+            isPartialFillEnabled: orderData.partialFillEnabled || false
+          };
+          
+          tx = await contractWithSigner.createEscrow(escrowConfig, {
+            value: totalValue,
+            gasLimit: 3000000
+          });
+        }
         
         console.log(`📝 Escrow creation tx sent: ${tx.hash}`);
         const receipt = await tx.wait();
@@ -1388,69 +1455,95 @@ async function initializeRelayer() {
       }
     }
     
-    // Listen for GERÇEK 1inch SrcEscrowCreated events
-    escrowFactoryContract.on('SrcEscrowCreated', async (srcImmutables, dstImmutablesComplement, event) => {
-      console.log('🏭 SrcEscrowCreated Event:', {
-        orderHash: srcImmutables.orderHash,
-        hashlock: srcImmutables.hashlock,
-        maker: srcImmutables.maker.toString(),
-        taker: srcImmutables.taker.toString(),
-        amount: ethers.formatEther(srcImmutables.amount),
-        safetyDeposit: ethers.formatEther(srcImmutables.safetyDeposit)
-      });
-      
-      // Find related order and update status
-      for (const [orderId, orderData] of activeOrders.entries()) {
-        if (orderData.hashLock === srcImmutables.hashlock) {
-          console.log(`✅ Matched src escrow ${srcImmutables.orderHash} with order ${orderId}`);
-          orderData.orderHash = srcImmutables.orderHash;
-          orderData.status = 'src_escrow_created';
-          break;
-        }
-      }
-    });
+    // Dinamik event listeners - Mainnet vs Testnet
+    const isMainnetContract = DEFAULT_NETWORK_MODE === 'mainnet';
     
-    // Listen for GERÇEK 1inch DstEscrowCreated events
-    escrowFactoryContract.on('DstEscrowCreated', async (escrowAddress, hashlock, taker, event) => {
-      console.log('🏭 DstEscrowCreated Event:', {
-        escrowAddress,
-        hashlock,
-        taker: taker.toString()
+    if (isMainnetContract) {
+      // MAINNET: Gerçek 1inch events
+      escrowFactoryContract.on('SrcEscrowCreated', async (srcImmutables, dstImmutablesComplement, event) => {
+        console.log('🏭 MAINNET SrcEscrowCreated Event:', {
+          orderHash: srcImmutables.orderHash,
+          hashlock: srcImmutables.hashlock,
+          maker: srcImmutables.maker.toString(),
+          taker: srcImmutables.taker.toString(),
+          amount: ethers.formatEther(srcImmutables.amount),
+          safetyDeposit: ethers.formatEther(srcImmutables.safetyDeposit)
+        });
+        
+        // Find related order and update status
+        for (const [orderId, orderData] of activeOrders.entries()) {
+          if (orderData.hashLock === srcImmutables.hashlock) {
+            console.log(`✅ Matched src escrow ${srcImmutables.orderHash} with order ${orderId}`);
+            orderData.orderHash = srcImmutables.orderHash;
+            orderData.status = 'src_escrow_created';
+            break;
+          }
+        }
       });
       
-      // Find related order and update status
-      for (const [orderId, orderData] of activeOrders.entries()) {
-        if (orderData.hashLock === hashlock) {
-          console.log(`✅ Matched dst escrow ${escrowAddress} with order ${orderId}`);
-          orderData.escrowAddress = escrowAddress;
-          orderData.status = 'dst_escrow_created';
-          break;
+      escrowFactoryContract.on('DstEscrowCreated', async (escrowAddress, hashlock, taker, event) => {
+        console.log('🏭 MAINNET DstEscrowCreated Event:', {
+          escrowAddress,
+          hashlock,
+          taker: taker.toString()
+        });
+        
+        // Find related order and update status
+        for (const [orderId, orderData] of activeOrders.entries()) {
+          if (orderData.hashLock === hashlock) {
+            console.log(`✅ Matched dst escrow ${escrowAddress} with order ${orderId}`);
+            orderData.escrowAddress = escrowAddress;
+            orderData.status = 'dst_escrow_created';
+            break;
+          }
         }
-      }
-    });
-    
-    // NOTE: EscrowFunded event not present in real 1inch EscrowFactory ABI
-    // Commented out to prevent errors
-    /*
-    escrowFactoryContract.on('EscrowFunded', async (escrowId, funder, amount, safetyDeposit, event) => {
-      console.log('💰 EscrowFunded Event:', {
-        escrowId: escrowId.toString(),
-        funder,
-        amount: ethers.formatEther(amount),
-        safetyDeposit: ethers.formatEther(safetyDeposit)
+      });
+    } else {
+      // TESTNET: Bizim custom events
+      escrowFactoryContract.on('EscrowCreated', async (escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId, event) => {
+        console.log('🏭 TESTNET EscrowCreated Event:', {
+          escrowId: escrowId.toString(),
+          escrowAddress,
+          resolver,
+          token,
+          amount: ethers.formatEther(amount),
+          hashLock,
+          chainId: chainId.toString(),
+          safetyDeposit: ethers.formatEther(safetyDeposit)
+        });
+        
+        // Find related order and update status
+        for (const [orderId, orderData] of activeOrders.entries()) {
+          if (orderData.hashLock === hashLock) {
+            console.log(`✅ Matched escrow ${escrowId} with order ${orderId}`);
+            orderData.escrowId = escrowId.toString();
+            orderData.escrowAddress = escrowAddress;
+            orderData.status = 'escrow_active';
+            break;
+          }
+        }
       });
       
-      // Update related order status
-      for (const [orderId, orderData] of activeOrders.entries()) {
-        if (orderData.escrowId === escrowId.toString()) {
-          console.log(`✅ Escrow ${escrowId} funded for order ${orderId}`);
-          orderData.status = 'escrow_funded';
-          // Here we can trigger Stellar side operations
-          break;
+      // Testnet EscrowFunded event
+      escrowFactoryContract.on('EscrowFunded', async (escrowId, funder, amount, safetyDeposit, event) => {
+        console.log('💰 TESTNET EscrowFunded Event:', {
+          escrowId: escrowId.toString(),
+          funder,
+          amount: ethers.formatEther(amount),
+          safetyDeposit: ethers.formatEther(safetyDeposit)
+        });
+        
+        // Update related order status
+        for (const [orderId, orderData] of activeOrders.entries()) {
+          if (orderData.escrowId === escrowId.toString()) {
+            console.log(`✅ Escrow ${escrowId} funded for order ${orderId}`);
+            orderData.status = 'escrow_funded';
+            break;
+          }
         }
-      }
-    });
-    */
+      });
+    }
+
     
     console.log('✅ EscrowFactory event listeners set up successfully');
   } catch (error) {
@@ -1474,7 +1567,7 @@ async function initializeRelayer() {
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
       const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
-      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, adminWallet);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), adminWallet);
       
       // Get relayer address
       const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
@@ -1510,7 +1603,7 @@ async function initializeRelayer() {
   app.get('/api/admin/relayer-status', async (req, res) => {
     try {
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), provider);
       
       const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
       const relayerWallet = new ethers.Wallet(relayerPrivateKey);
@@ -2306,7 +2399,7 @@ app.post('/presets/optimize', async (req, res) => {
       console.log('🧪 Testing EscrowFactory connection...');
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), provider);
       
       // Get basic contract info
       const [totalEscrows, minSafetyDeposit, maxSafetyDeposit] = await Promise.all([
@@ -2342,7 +2435,7 @@ app.post('/presets/optimize', async (req, res) => {
       console.log(`🔍 Getting escrow details for ID: ${escrowId}`);
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), provider);
       
       const escrowData = await escrowFactoryContract.getEscrow(escrowId);
       
@@ -2396,7 +2489,7 @@ app.post('/presets/optimize', async (req, res) => {
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
       const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
-      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, adminWallet);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), getEscrowFactoryABI(DEFAULT_NETWORK_MODE === 'mainnet'), adminWallet);
       
       // Check if already authorized
       const contractWithProvider = escrowFactoryContract as any;

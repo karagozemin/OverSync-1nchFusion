@@ -474,6 +474,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     e.preventDefault();
     
     console.log('🚀 Form submitted:', { amount, ethAddress, stellarAddress, direction });
+    console.log('🔍 FRONTEND DEBUG:', {
+      'RAW_AMOUNT': amount,
+      'AMOUNT_TYPE': typeof amount,
+      'AMOUNT_LENGTH': amount.length,
+      'AMOUNT_STRING': String(amount),
+      'PARSED_FLOAT': parseFloat(amount),
+      'DIRECTION': direction
+    });
     
     if (!amount || !ethAddress || !stellarAddress) {
       console.error('❌ Missing required fields:', { amount: !!amount, ethAddress: !!ethAddress, stellarAddress: !!stellarAddress });
@@ -542,6 +550,13 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       }
 
       // Create order request (used by both testnet and mainnet)
+      console.log('📋 BEFORE orderRequest creation:', {
+        'AMOUNT_BEFORE_REQUEST': amount,
+        'AMOUNT_TYPE': typeof amount,
+        'EXCHANGE_RATE': exchangeRate,
+        'DIRECTION': direction
+      });
+      
       const orderRequest = {
         fromChain: direction === 'eth_to_xlm' ? 'ethereum' : 'stellar',
         toChain: direction === 'eth_to_xlm' ? 'stellar' : 'ethereum',
@@ -554,6 +569,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         exchangeRate: exchangeRate, // Include real-time rate
         networkMode: networkInfo.isTestnet ? 'testnet' : 'mainnet' // DYNAMIC NETWORK
       };
+      
+      console.log('📋 AFTER orderRequest creation:', {
+        'orderRequest.amount': orderRequest.amount,
+        'orderRequest_full': orderRequest
+      });
       
       if (networkInfo.isTestnet) {
         // TESTNET: Use existing relayer system
@@ -1141,21 +1161,35 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                 <input
                   type="text"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => {
+                    console.log('⌨️ Input changed:', { 
+                      oldValue: amount, 
+                      newValue: e.target.value,
+                      eventType: 'manual_input'
+                    });
+                    setAmount(e.target.value);
+                  }}
                   placeholder="0.0"
                     className="flex-1 bg-transparent text-2xl font-medium text-white outline-none"
                 />
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      onClick={() => setAmount((parseFloat(balance) * 0.5).toFixed(4))}
+                      onClick={() => {
+                        const newAmount = (parseFloat(balance) * 0.5).toFixed(4);
+                        console.log('🔘 50% Button clicked:', { balance, newAmount });
+                        setAmount(newAmount);
+                      }}
                       className="px-2 py-1 text-xs font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
                     >
                       50%
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAmount(balance)}
+                      onClick={() => {
+                        console.log('🔘 MAX Button clicked:', { balance });
+                        setAmount(balance);
+                      }}
                       className="px-2 py-1 text-xs font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
                     >
                       Max

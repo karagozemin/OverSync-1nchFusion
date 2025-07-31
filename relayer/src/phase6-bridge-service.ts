@@ -372,16 +372,32 @@ export class Phase6BridgeService extends EventEmitter {
       this.emit('ethereumOrderRefunded', { orderId, refundee, amount, safetyDeposit });
     });
     
-    // GERÇEK 1inch EscrowFactory events
-    this.config.escrowFactoryContract.on('SrcEscrowCreated', (srcImmutables, dstImmutablesComplement) => {
-      console.log(`🏭 SrcEscrowCreated event: ${srcImmutables.orderHash}`);
-      this.emit('srcEscrowCreated', { srcImmutables, dstImmutablesComplement });
-    });
+    // Dinamik EscrowFactory events - Mainnet vs Testnet
+    const isMainnet = process.env.NETWORK_MODE === 'mainnet';
     
-    this.config.escrowFactoryContract.on('DstEscrowCreated', (escrowAddress, hashlock, taker) => {
-      console.log(`🏭 DstEscrowCreated event: ${escrowAddress}`);
-      this.emit('dstEscrowCreated', { escrowAddress, hashlock, taker });
-    });
+    if (isMainnet) {
+      // MAINNET: Gerçek 1inch EscrowFactory events
+      this.config.escrowFactoryContract.on('SrcEscrowCreated', (srcImmutables, dstImmutablesComplement) => {
+        console.log(`🏭 MAINNET SrcEscrowCreated event: ${srcImmutables.orderHash}`);
+        this.emit('srcEscrowCreated', { srcImmutables, dstImmutablesComplement });
+      });
+      
+      this.config.escrowFactoryContract.on('DstEscrowCreated', (escrowAddress, hashlock, taker) => {
+        console.log(`🏭 MAINNET DstEscrowCreated event: ${escrowAddress}`);
+        this.emit('dstEscrowCreated', { escrowAddress, hashlock, taker });
+      });
+    } else {
+      // TESTNET: Bizim custom EscrowFactory events
+      this.config.escrowFactoryContract.on('EscrowCreated', (escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId) => {
+        console.log(`🏭 TESTNET EscrowCreated event: ${escrowId}`);
+        this.emit('escrowCreated', { escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId });
+      });
+      
+      this.config.escrowFactoryContract.on('EscrowFunded', (escrowId, funder, amount, safetyDeposit) => {
+        console.log(`💰 TESTNET EscrowFunded event: ${escrowId}`);
+        this.emit('escrowFunded', { escrowId, funder, amount, safetyDeposit });
+      });
+    }
     
     console.log('✅ Event listeners set up');
   }
