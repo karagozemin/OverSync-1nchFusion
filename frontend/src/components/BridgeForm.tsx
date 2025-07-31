@@ -9,7 +9,6 @@ import {
   Memo
 } from '@stellar/stellar-sdk';
 import { isTestnet, getCurrentNetwork, getContractAddresses } from '../config/networks';
-import { oneInchService } from '../services/oneInch';
 
 // Web3 imports for contract interaction
 declare global {
@@ -47,7 +46,7 @@ const XLM_TOKEN = {
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
 
 // Network configuration
-const MAINNET_CHAIN_ID = '0x1'; // Ethereum Mainnet
+const MAINNET_CHAIN_ID = '0x1'; // Ethereum Mainnet (1)
 
 // Helper function to fetch real-time crypto prices with adaptive rate limiting
 const fetchCryptoPrices = async (currentInterval: number, rateLimitCount: number, 
@@ -523,7 +522,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             } : {
               chainId: MAINNET_CHAIN_ID,
               chainName: 'Ethereum Mainnet',
-              rpcUrls: ['https://mainnet.infura.io/v3/'],
+              rpcUrls: ['https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY_HERE'],
               blockExplorerUrls: ['https://etherscan.io'],
               nativeCurrency: {
                 name: 'Ether',
@@ -542,12 +541,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         }
       }
 
-      if (networkInfo.isTestnet) {
-        // TESTNET: Use existing relayer system
-        console.log('🔄 Creating bridge order via Relayer API (Testnet)...');
-      setStatusMessage('Order oluşturuluyor...');
-      
-      // Create order request to relayer
+      // Create order request (used by both testnet and mainnet)
       const orderRequest = {
         fromChain: direction === 'eth_to_xlm' ? 'ethereum' : 'stellar',
         toChain: direction === 'eth_to_xlm' ? 'stellar' : 'ethereum',
@@ -557,8 +551,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         ethAddress: ethAddress,
         stellarAddress: stellarAddress,
         direction: direction,
-        exchangeRate: exchangeRate // Include real-time rate
+        exchangeRate: exchangeRate, // Include real-time rate
+        networkMode: networkInfo.isTestnet ? 'testnet' : 'mainnet' // DYNAMIC NETWORK
       };
+      
+      if (networkInfo.isTestnet) {
+        // TESTNET: Use existing relayer system
+        console.log('🔄 Creating bridge order via Relayer API (Testnet)...');
+        setStatusMessage('Order oluşturuluyor...');
       
       console.log('📋 Order request:', orderRequest);
       
@@ -582,56 +582,30 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         result = await response.json();
       console.log('✅ Order created via relayer:', result);
 
-      } else {
-        // MAINNET: Use 1inch Fusion Plus API
-        console.log('🔄 Creating bridge order via 1inch Fusion Plus (Mainnet)...');
-        setStatusMessage('1inch order oluşturuluyor...');
+            } else {
+        // MAINNET: Relayer handles 1inch integration
+        console.log('🔄 Creating bridge order via Relayer API (Mainnet)...');
+        setStatusMessage('Mainnet order oluşturuluyor...');
         
-        try {
-          // Get escrow factory info
-          const escrowInfo = await oneInchService.getEscrowInfo(1); // Chain ID 1 for Ethereum mainnet
-          console.log('🏭 1inch Escrow Info:', escrowInfo);
-          
-          // Create 1inch order
-          const oneInchOrderRequest = {
-            fromTokenAddress: direction === 'eth_to_xlm' ? '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' : '0xA0b86a33E6441b8bB770AE39aaDC4e75C0f03E6F', // ETH or WETH
-            toTokenAddress: '0xA0b86a33E6441b8bB770AE39aaDC4e75C0f03E6F', // WETH (placeholder for XLM destination)
-            amount: (parseFloat(amount) * 1e18).toString(), // Convert to wei
-            fromAddress: ethAddress,
-            slippage: 1, // 1% slippage
-            preset: 'default',
-          };
-          
-          console.log('📋 1inch Order request:', oneInchOrderRequest);
-          
-          const oneInchOrder = await oneInchService.createOrder(oneInchOrderRequest);
-          console.log('✅ 1inch Order created:', oneInchOrder);
-          
-          // Create result object compatible with existing flow
-          result = {
-             success: true,
-             orderId: oneInchOrder.orderHash,
-             orderData: {
-               ...oneInchOrder.order,
-               secret: 'N/A',
-               created: new Date().toISOString(),
-               status: 'pending_1inch_escrow'
-             },
-             approvalTransaction: {
-               to: escrowInfo.escrowFactory,
-               value: '0x0', // No ETH needed for approval
-               data: '0x', // Will be filled by 1inch SDK
-             },
-             message: '🏭 1inch Fusion Plus: Direct escrow creation!',
-             contractType: 'ONEINCH_FUSION_PLUS',
-             contractAddress: escrowInfo.escrowFactory,
-             note: '✅ Using 1inch Fusion Plus for mainnet bridge'
-           };
-          
-        } catch (oneInchError: any) {
-          console.error('❌ 1inch API Error:', oneInchError);
-          throw new Error(`1inch API Error: ${oneInchError.message}`);
+        // Send request to relayer (same as testnet)
+        const response = await fetch(`${API_BASE_URL}/api/orders/create`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(orderRequest)
+        });
+        
+        console.log('📥 Mainnet API Response status:', response.status);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('❌ Mainnet API Error:', errorData);
+          throw new Error(errorData.error || `Mainnet API Error: ${response.status}`);
         }
+        
+        result = await response.json();
+        console.log('✅ Mainnet order created via relayer:', result);
       }
       
       // Handle different transaction types based on direction
@@ -661,6 +635,19 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             params: [ethAddress, 'latest']
           });
           console.log('💰 User balance:', balance);
+          
+          // Additional balance checks
+          const balanceWei = BigInt(balance);
+          const valueWei = BigInt(transactionData.value);
+          const estimatedGasCost = BigInt('0x5208') * BigInt('20000000000'); // Rough estimate
+          
+          console.log('💰 Balance Analysis:', {
+            balanceETH: (Number(balanceWei) / 1e18).toFixed(6),
+            requiredETH: (Number(valueWei) / 1e18).toFixed(6),
+            estimatedGasCostETH: (Number(estimatedGasCost) / 1e18).toFixed(6),
+            totalNeededETH: (Number(valueWei + estimatedGasCost) / 1e18).toFixed(6),
+            hasSufficientBalance: balanceWei >= (valueWei + estimatedGasCost)
+          });
           
           // Estimate gas if not provided by relayer
           let gasLimit = transactionData.gas;
@@ -769,6 +756,17 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
           // ONLY process if Ethereum transaction was successful
           console.log('⚡ Triggering cross-chain processing after successful ETH tx...');
+          
+          // Debug: Check order data before processing
+          console.log('🔍 DEBUG Process Request:', {
+            resultOrderId: result.orderId,
+            resultOrderIdType: typeof result.orderId,
+            txHash: txHash,
+            txHashType: typeof txHash,
+            stellarAddress: stellarAddress,
+            ethAddress: ethAddress,
+            fullResult: result
+          });
           
           try {
             const processResponse = await fetch(`${API_BASE_URL}/api/orders/process`, {

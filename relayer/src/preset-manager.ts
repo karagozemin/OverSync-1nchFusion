@@ -293,7 +293,7 @@ export class PresetManager {
         gasPriceEstimate: "30"
       },
       conditions: {
-        minAmount: "1000000000000000000", // 1 ETH
+        minAmount: "1000000000000000", // 0.001 ETH - Daha düşük minimum
         supportedChains: ['ethereum', 'polygon', 'bsc']
       }
     });
@@ -314,7 +314,7 @@ export class PresetManager {
         gasPriceEstimate: "20"
       },
       conditions: {
-        minAmount: "100000000000000000", // 0.1 ETH
+        minAmount: "1000000000000000", // 0.001 ETH - Daha düşük minimum
         supportedChains: ['ethereum', 'polygon', 'bsc', 'stellar']
       }
     });
@@ -335,7 +335,7 @@ export class PresetManager {
         gasPriceEstimate: "15"
       },
       conditions: {
-        minAmount: "10000000000000000", // 0.01 ETH
+        minAmount: "1000000000000000", // 0.001 ETH - Daha düşük minimum
         supportedChains: ['ethereum', 'polygon', 'bsc', 'stellar', 'arbitrum']
       }
     });

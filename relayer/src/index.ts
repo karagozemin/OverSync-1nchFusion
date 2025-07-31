@@ -21,6 +21,7 @@ const NETWORK_CONFIG = {
     ethereum: {
       chainId: 11155111, // Sepolia
       escrowFactory: '0x6c3818E074d891F1FBB3A75913e4BDe87BcF1123',
+      htlcBridge: '0x3f344ACDd17a0c4D21096da895152820f595dc8A', // Testnet HTLC Bridge
     },
     stellar: {
       networkPassphrase: 'Test SDF Network ; September 2015',
@@ -31,6 +32,7 @@ const NETWORK_CONFIG = {
     ethereum: {
       chainId: 1, // Ethereum Mainnet
       escrowFactory: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Factory
+      htlcBridge: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // Same as escrowFactory for now
     },
     stellar: {
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
@@ -39,35 +41,36 @@ const NETWORK_CONFIG = {
   }
 };
 
-// Determine current network from environment
-const CURRENT_NETWORK = process.env.NETWORK_MODE === 'mainnet' ? 'mainnet' : 'testnet';
-const NETWORK = NETWORK_CONFIG[CURRENT_NETWORK];
+// Determine current network from environment (default)
+const DEFAULT_NETWORK_MODE = process.env.NETWORK_MODE || 'mainnet'; // Read from .env
 
-console.log(`🌐 Network Mode: ${CURRENT_NETWORK.toUpperCase()}`);
-console.log(`🏭 Escrow Factory: ${NETWORK.ethereum.escrowFactory}`);
+// Dynamic network config getter
+function getNetworkConfig(networkMode?: string): any {
+  const selectedNetwork = networkMode || DEFAULT_NETWORK_MODE;
+  return NETWORK_CONFIG[selectedNetwork] || NETWORK_CONFIG[DEFAULT_NETWORK_MODE];
+}
+
+console.log(`🌐 Default Network Mode: ${DEFAULT_NETWORK_MODE.toUpperCase()}`);
+console.log(`🏭 Default Escrow Factory: ${getNetworkConfig().ethereum.escrowFactory}`);
 
 // Real HTLC Bridge Contract ABI  
 const HTLC_BRIDGE_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
 ];
 
-// EscrowFactory Contract ABI
+// GERÇEK 1inch EscrowFactory ABI (etherscan'dan doğrulandı)
 const ESCROW_FACTORY_ABI = [
-  "function createEscrow((address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config) external payable returns (uint256 escrowId)",
-  "function fundEscrow(uint256 escrowId) external",
-  "function claimEscrow(uint256 escrowId, bytes32 preimage) external",
-  "function refundEscrow(uint256 escrowId) external",
-  "function getEscrow(uint256 escrowId) external view returns (tuple(address escrowAddress, tuple(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress, uint256 safetyDeposit, uint256 chainId, bytes32 stellarTxHash, bool isPartialFillEnabled) config, uint8 status, uint256 createdAt, uint256 filledAmount, uint256 safetyDepositPaid, address resolver, bool isActive))",
-  "function authorizeResolver(address resolver) external",
-  "function authorizedResolvers(address resolver) external view returns (bool)",
-  "function totalEscrows() external view returns (uint256)",
-  "function MIN_SAFETY_DEPOSIT() external view returns (uint256)",
-  "function MAX_SAFETY_DEPOSIT() external view returns (uint256)",
+  `function createDstEscrow(
+    (bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) dstImmutables,
+    uint256 srcCancellationTimestamp
+  ) external payable`,
+  "function addressOfEscrowSrc((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) immutables) external view returns (address)",
+  "function addressOfEscrowDst((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) immutables) external view returns (address)",
+  "function ESCROW_SRC_IMPLEMENTATION() external view returns (address)",
+  "function ESCROW_DST_IMPLEMENTATION() external view returns (address)",
   // Events
-  "event EscrowCreated(uint256 indexed escrowId, address indexed escrowAddress, address indexed resolver, address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 safetyDeposit, uint256 chainId)",
-  "event EscrowFunded(uint256 indexed escrowId, address indexed funder, uint256 amount, uint256 safetyDeposit)",
-  "event EscrowClaimed(uint256 indexed escrowId, address indexed claimer, uint256 amount, bytes32 preimage)",
-  "event EscrowRefunded(uint256 indexed escrowId, address indexed refundee, uint256 amount, uint256 safetyDeposit)"
+  "event SrcEscrowCreated((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) srcImmutables, (uint256 maker, uint256 amount, uint256 token, uint256 safetyDeposit, uint256 chainId) dstImmutablesComplement)",
+  "event DstEscrowCreated(address escrow, bytes32 hashlock, uint256 taker)"
 ];
 import { ethereumListener } from './ethereum-listener.js';
 import { quoterService } from './quoter-service.js';
@@ -96,15 +99,23 @@ import { getMonitor } from './monitoring.js';
 
 // Contract addresses
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
-// Network-aware contract addresses
-const HTLC_CONTRACT_ADDRESS = NETWORK_CONFIG.testnet.ethereum.escrowFactory; // Legacy, use ESCROW_FACTORY_ADDRESS instead
-const ESCROW_FACTORY_ADDRESS = NETWORK.ethereum.escrowFactory; // Dynamic based on network
+// Network-aware contract addresses  
+const HTLC_CONTRACT_ADDRESS = getHtlcBridgeAddress(); // Dynamic: testnet/mainnet
+
+// Dynamic contract address getters
+function getEscrowFactoryAddress(networkMode?: string): string {
+  return getNetworkConfig(networkMode).ethereum.escrowFactory;
+}
+
+function getHtlcBridgeAddress(networkMode?: string): string {
+  return getNetworkConfig(networkMode).ethereum.htlcBridge;
+}
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
   // Service settings
   port: Number(process.env.RELAYER_PORT) || 3001,
-  pollInterval: Number(process.env.RELAYER_POLL_INTERVAL) || 5000,
+      pollInterval: Number(process.env.RELAYER_POLL_INTERVAL) || 15000, // Increased from 5s to 15s
   retryAttempts: Number(process.env.RELAYER_RETRY_ATTEMPTS) || 3,
   retryDelay: Number(process.env.RELAYER_RETRY_DELAY) || 2000,
   
@@ -115,9 +126,11 @@ export const RELAYER_CONFIG = {
   
   // Ethereum configuration
   ethereum: {
-    network: process.env.ETHEREUM_NETWORK || 'sepolia',
-    rpcUrl: process.env.ETHEREUM_RPC_URL || 'https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID',
-    contractAddress: process.env.HTLC_CONTRACT_ADDRESS || '',
+    network: process.env.ETHEREUM_NETWORK || 'mainnet',
+    rpcUrl: process.env.ETHEREUM_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE',
+    contractAddress: process.env.ESCROW_FACTORY_ADDRESS || '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Escrow Factory - API mode
+    fusionApiUrl: 'https://api.1inch.dev/fusion',
+    fusionApiKey: process.env.ONEINCH_API_KEY || '',
     privateKey: process.env.RELAYER_PRIVATE_KEY || '',
     gasPrice: Number(process.env.GAS_PRICE_GWEI) || 20,
     gasLimit: Number(process.env.GAS_LIMIT) || 300000,
@@ -125,11 +138,19 @@ export const RELAYER_CONFIG = {
     minConfirmations: Number(process.env.MIN_CONFIRMATION_BLOCKS) || 6,
   },
   
-  // Stellar configuration
+  // Stellar configuration - Auto-detects based on network
   stellar: {
     network: process.env.STELLAR_NETWORK || 'testnet',
-    horizonUrl: process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org',
-    networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015',
+    horizonUrl: process.env.STELLAR_HORIZON_URL || (
+      (process.env.STELLAR_NETWORK === 'mainnet') 
+        ? 'https://horizon.stellar.org' 
+        : 'https://horizon-testnet.stellar.org'
+    ),
+    networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || (
+      (process.env.STELLAR_NETWORK === 'mainnet')
+        ? 'Public Global Stellar Network ; September 2015'
+        : 'Test SDF Network ; September 2015'
+    ),
     secretKey: process.env.RELAYER_STELLAR_SECRET || '',
     publicKey: process.env.RELAYER_STELLAR_PUBLIC || '',
     startLedger: Number(process.env.START_LEDGER_STELLAR) || 0,
@@ -257,7 +278,7 @@ async function initializeRelayer() {
   // ===== ORDERS API ENDPOINTS =====
   
   console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
-  console.log('🏭 USING ESCROW FACTORY CONTRACT:', ESCROW_FACTORY_ADDRESS);
+  console.log('🏭 DEFAULT ESCROW FACTORY CONTRACT:', getEscrowFactoryAddress());
     
   // Global order storage (in production this would be a database)
   const activeOrders = new Map();
@@ -355,7 +376,7 @@ async function initializeRelayer() {
   
   app.post('/api/orders/create', async (req, res) => {
     try {
-      const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction, exchangeRate } = req.body;
+      const { fromChain, toChain, fromToken, toToken, amount, ethAddress, stellarAddress, direction, exchangeRate, network, networkMode } = req.body;
       
       // Validate required fields
       if (!fromChain || !toChain || !fromToken || !toToken || !amount || !ethAddress || !stellarAddress) {
@@ -383,110 +404,237 @@ async function initializeRelayer() {
       // Generate order ID
       const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       
+      // Dynamic network detection from request or fallback to env
+      const requestNetwork = networkMode || network || (req.query.network) || DEFAULT_NETWORK_MODE;
+      const isMainnetRequest = requestNetwork === 'mainnet';
+      
+      console.log(`🌐 Network Detection:`, {
+        requestNetwork,
+        queryParam: req.query.network,
+        bodyNetworkMode: networkMode,
+        bodyNetwork: network,
+        envDefault: DEFAULT_NETWORK_MODE,
+        finalDecision: isMainnetRequest ? 'MAINNET' : 'TESTNET'
+      });
+      
+      // FORCE DEBUG: Always log this
+      console.log(`🔍 CRITICAL DEBUG:`, {
+        'networkMode': networkMode,
+        'network': network,
+        'req.query.network': req.query.network,
+        'DEFAULT_NETWORK_MODE': DEFAULT_NETWORK_MODE,
+        'requestNetwork': requestNetwork,
+        'isMainnetRequest': isMainnetRequest,
+        'WILL_GO_TO': isMainnetRequest ? 'MAINNET_BRANCH' : 'TESTNET_BRANCH'
+      });
+      
       // For ETH to XLM direction
       if (direction === 'eth_to_xlm') {
         
-        if (CURRENT_NETWORK === 'mainnet') {
-          // MAINNET: Use 1inch Fusion Plus API
-          console.log('🔄 Creating mainnet order via 1inch Fusion Plus...');
+        if (isMainnetRequest) {
+          // MAINNET: Use GERÇEK 1inch EscrowFactory createDstEscrow (doğru ABI ile!)
+          console.log('🏭 Creating escrow via GERÇEK 1inch EscrowFactory createDstEscrow method...');
           
-          // TODO: Implement 1inch API integration here
-          // For now, return a placeholder response
+          // amount is already a string like "0.00012", convert to wei
+          const userAmountWei = ethers.parseEther(amount);
+          console.log(`💰 User Amount: ${amount} ETH = ${userAmountWei.toString()} wei`);
+          
+          // Generate HTLC parameters for cross-chain bridge
+          const secretBytes = new Uint8Array(32);
+          crypto.getRandomValues(secretBytes);
+          const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+          const hashLock = ethers.keccak256(secret);
+          
+          console.log('🔑 Generated HTLC parameters:', {
+            secret: secret.substring(0, 10) + '...',
+            hashLock: hashLock
+          });
+          
+          // Calculate safety deposit (minimum required by 1inch escrow factory)
+          const safetyDepositPercentage = 2; // 2% safety deposit
+          const safetyDeposit = userAmountWei * BigInt(safetyDepositPercentage) / BigInt(100);
+          const MIN_SAFETY_DEPOSIT = ethers.parseEther('0.001'); // 0.001 ETH minimum
+          const actualSafetyDeposit = safetyDeposit > MIN_SAFETY_DEPOSIT ? safetyDeposit : MIN_SAFETY_DEPOSIT;
+          
+          console.log('💰 Safety deposit:', ethers.formatEther(actualSafetyDeposit), 'ETH');
+          
+          // Generate order hash for 1inch protocol
+          const orderHash = ethers.keccak256(
+            ethers.solidityPacked(
+              ['address', 'uint256', 'bytes32', 'uint256'],
+              [normalizedEthAddress, userAmountWei, hashLock, Math.floor(Date.now() / 1000)]
+            )
+          );
+          
+          // Store order with HTLC details 
+          const orderData = {
+            orderId,
+            orderHash,
+            hashLock: hashLock,
+            secret: secret,
+            ethAddress: normalizedEthAddress,
+            stellarAddress,
+            amount: userAmountWei.toString(),
+            safetyDeposit: actualSafetyDeposit.toString(),
+            exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
+            contractType: 'ONEINCH_ESCROW_FACTORY_MAINNET_DST',
+            status: 'pending_dst_escrow_deployment',
+            network: 'ethereum',
+            chainId: 1,
+            created: new Date().toISOString()
+          };
+          
+          activeOrders.set(orderId, orderData);
+          
+          const totalCost = userAmountWei + actualSafetyDeposit;
+          
+          // Create IBaseEscrow.Immutables struct for createDstEscrow
+          const dstImmutables = {
+            orderHash: orderHash,
+            hashlock: hashLock,
+            maker: normalizedEthAddress, // Will be converted to uint256 by ethers
+            taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
+            token: '0x0000000000000000000000000000000000000000', // ETH as uint256
+            amount: userAmountWei.toString(),
+            safetyDeposit: actualSafetyDeposit.toString(),
+            timelocks: Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours
+          };
+          
+          const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
+          
+          // Encode EscrowFactory createDstEscrow call (DOĞRU ABI!)
+          const escrowInterface = new ethers.Interface(ESCROW_FACTORY_ABI);
+          const encodedData = escrowInterface.encodeFunctionData("createDstEscrow", [
+            dstImmutables,
+            srcCancellationTimestamp
+          ]);
+
+          // Return direct EscrowFactory contract interaction
           res.json({
             success: true,
             orderId,
-            message: '🏭 Mainnet: Will use 1inch Fusion Plus API',
-            networkMode: 'mainnet',
-            escrowFactory: ESCROW_FACTORY_ADDRESS,
-            note: '1inch API integration coming next...'
+            orderData,
+            dstImmutables,
+            srcCancellationTimestamp,
+            approvalTransaction: {
+              to: getEscrowFactoryAddress('mainnet'),       // Mainnet EscrowFactory
+              value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
+              data: encodedData,                // createDstEscrow call with struct
+              gas: '0x7A120'                    // 500000 gas limit for contract call
+            },
+            message: '🏭 Mainnet: GERÇEK 1inch EscrowFactory createDstEscrow',
+            nextStep: 'EscrowFactory createDstEscrow çağırın',
+            instructions: [
+              '1. User MetaMask ile GERÇEK 1inch EscrowFactory contract\'ını çağıracak',
+              '2. createDstEscrow fonksiyonu çalışacak (DOĞRU ABI ile!)',
+              '3. Cross-chain bridge için escrow oluşacak'
+            ],
+            safetyDeposit: ethers.formatEther(actualSafetyDeposit.toString()),
+            totalCost: ethers.formatEther(totalCost.toString()),
+            contractType: 'ONEINCH_ESCROW_FACTORY_MAINNET_DST',
+            contractAddress: getEscrowFactoryAddress('mainnet'),
+            note: '✅ GERÇEK createDstEscrow metodu - MetaMask artık çalışacak!'
           });
           return;
         }
         
-        // TESTNET: Use EscrowFactory Direct Contract Interaction
+        // TESTNET: Use GERÇEK EscrowFactory createDstEscrow (aynı ABI mainnet ile!)
         
         // Generate HTLC parameters
         const secretBytes = new Uint8Array(32);
         crypto.getRandomValues(secretBytes);
         const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-        const hashLock = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        const hashLock = ethers.keccak256(secret);
+        
+        // amount is already a string like "0.00012", convert to wei
+        const userAmountWei = ethers.parseEther(amount);
+        console.log(`💰 TESTNET User Amount: ${amount} ETH = ${userAmountWei.toString()} wei`);
+        
+        // Calculate safety deposit (minimum required by escrow factory)
+        const safetyDepositPercentage = 2; // 2% safety deposit
+        const safetyDeposit = userAmountWei * BigInt(safetyDepositPercentage) / BigInt(100);
+        const MIN_SAFETY_DEPOSIT = ethers.parseEther('0.001'); // 0.001 ETH minimum
+        const actualSafetyDeposit = safetyDeposit > MIN_SAFETY_DEPOSIT ? safetyDeposit : MIN_SAFETY_DEPOSIT;
+        
+        // Generate order hash for protocol
+        const orderHash = ethers.keccak256(
+          ethers.solidityPacked(
+            ['address', 'uint256', 'bytes32', 'uint256'],
+            [normalizedEthAddress, userAmountWei, hashLock, Math.floor(Date.now() / 1000)]
+          )
+        );
         
         const orderData = {
           orderId,
-          token: '0x0000000000000000000000000000000000000000', // ETH
-          amount: (parseFloat(amount) * 1e18).toString(),
-          hashLock,
-          timelock: Math.floor(Date.now() / 1000) + 7201, // 2+ hours
-          feeRate: 100, // 1%
-          beneficiary: stellarAddress,
-          refundAddress: normalizedEthAddress,
-          destinationChainId: 1, // Stellar
-          stellarTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
-          partialFillEnabled: false,
+          orderHash,
+          hashLock: hashLock,
           secret: secret,
-          created: new Date().toISOString(),
-          status: 'pending_direct_escrow'
+          ethAddress: normalizedEthAddress,
+          stellarAddress,
+          amount: userAmountWei.toString(),
+          safetyDeposit: actualSafetyDeposit.toString(),
+          exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
+          contractType: 'ONEINCH_ESCROW_FACTORY_TESTNET_DST',
+          status: 'pending_dst_escrow_deployment',
+          network: 'ethereum',
+          chainId: isMainnetRequest ? 1 : 11155111,
+          created: new Date().toISOString()
         };
 
         // Store order
-        activeOrders.set(orderId, {
-          ...orderData,
-          ethAddress: normalizedEthAddress,
-          stellarAddress,
-          amount,
-          exchangeRate: exchangeRate || ETH_TO_XLM_RATE
-        });
+        activeOrders.set(orderId, orderData);
 
-        console.log('✅ ETH→XLM Order created:', orderId);
-        console.log('🏭 DIRECT ESCROW MODE: User → EscrowFactory Contract');
+        console.log('✅ TESTNET ETH→XLM Order created:', orderId);
+        console.log('🏭 TESTNET GERÇEK ESCROW MODE: User → createDstEscrow');
         
-        // Calculate total cost (order + safety deposit)
-        const MIN_SAFETY_DEPOSIT = BigInt('10000000000000000'); // 0.01 ETH
-        const orderAmountBigInt = BigInt(orderData.amount);
-        const totalCost = orderAmountBigInt + MIN_SAFETY_DEPOSIT;
+        const totalCost = userAmountWei + actualSafetyDeposit;
         
-        // Create EscrowConfig struct
-        const escrowConfig = {
-          token: '0x0000000000000000000000000000000000000000', // ETH
-          amount: orderData.amount,
-          hashLock: orderData.hashLock,
-          timelock: orderData.timelock,
-          beneficiary: normalizedEthAddress,
-          refundAddress: normalizedEthAddress,
-          safetyDeposit: MIN_SAFETY_DEPOSIT.toString(),
-          chainId: 1,
-          stellarTxHash: ethers.ZeroHash,
-          isPartialFillEnabled: orderData.partialFillEnabled || false
+        // Create IBaseEscrow.Immutables struct for createDstEscrow (aynı mainnet ile!)
+        const dstImmutables = {
+          orderHash: orderHash,
+          hashlock: hashLock,
+          maker: normalizedEthAddress, // Will be converted to uint256 by ethers
+          taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
+          token: '0x0000000000000000000000000000000000000000', // ETH as uint256
+          amount: userAmountWei.toString(),
+          safetyDeposit: actualSafetyDeposit.toString(),
+          timelocks: Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours
         };
         
-        // Encode EscrowFactory createEscrow call
+        const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
+        
+        // Encode EscrowFactory createDstEscrow call (DOĞRU ABI!)
         const escrowInterface = new ethers.Interface(ESCROW_FACTORY_ABI);
-        const encodedData = escrowInterface.encodeFunctionData("createEscrow", [escrowConfig]);
+        const encodedData = escrowInterface.encodeFunctionData("createDstEscrow", [
+          dstImmutables,
+          srcCancellationTimestamp
+        ]);
 
         // Return direct EscrowFactory contract interaction
         res.json({
           success: true,
           orderId,
           orderData,
-          escrowConfig,
+          dstImmutables,
+          srcCancellationTimestamp,
           approvalTransaction: {
-            to: ESCROW_FACTORY_ADDRESS,       // Direct to EscrowFactory
+            to: getEscrowFactoryAddress(requestNetwork),       // Dynamic EscrowFactory (testnet)
             value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
-            data: encodedData                 // createEscrow call with config
-            // Let MetaMask estimate gas automatically
+            data: encodedData,                // createDstEscrow call with struct
+            gas: '0x7A120'                    // 500000 gas limit for contract call
           },
-          message: '🏭 Direct EscrowFactory: Contract interaction!',
-          nextStep: 'EscrowFactory createEscrow çağırın',
+          message: '🏭 TESTNET: GERÇEK EscrowFactory createDstEscrow',
+          nextStep: 'EscrowFactory createDstEscrow çağırın',
           instructions: [
-            '1. User MetaMask ile direkt EscrowFactory contract\'ını çağıracak',
-            '2. createEscrow fonksiyonu çalışacak',
-            '3. Create2 ile deterministik escrow adresi oluşacak'
+            '1. User MetaMask ile GERÇEK EscrowFactory contract\'ını çağıracak',
+            '2. createDstEscrow fonksiyonu çalışacak (DOĞRU ABI ile!)',
+            '3. Cross-chain bridge için escrow oluşacak'
           ],
-          safetyDeposit: ethers.formatEther(MIN_SAFETY_DEPOSIT.toString()),
+          safetyDeposit: ethers.formatEther(actualSafetyDeposit.toString()),
           totalCost: ethers.formatEther(totalCost.toString()),
-          contractType: 'ESCROW_FACTORY_DIRECT',
-          contractAddress: ESCROW_FACTORY_ADDRESS,
-          note: '✅ Authorization gerekmez - herkes kullanabilir!'
+          contractType: 'ONEINCH_ESCROW_FACTORY_TESTNET_DST',
+          contractAddress: getEscrowFactoryAddress(requestNetwork),
+          note: '✅ TESTNET: GERÇEK createDstEscrow metodu - aynı mainnet ile!'
         });
         
       } else if (direction === 'xlm_to_eth') {
@@ -562,8 +710,43 @@ async function initializeRelayer() {
       console.log('📋 Processing order with stored data:', {
         userStellarAddress,
         userEthAddress, 
-        orderAmount
+        orderAmount,
+        contractType: storedOrder.contractType
       });
+
+      // Handle 1inch Escrow Factory orders first
+      if (storedOrder.contractType === 'ONEINCH_ESCROW_FACTORY' && storedOrder.status === 'pending_escrow_deployment') {
+        console.log('🏭 Processing 1inch Escrow Factory deployment...');
+        
+        try {
+          // Escrow was deployed when user called deploySrc
+          // Now we need to create corresponding escrow on Stellar
+          console.log('🌟 Creating corresponding escrow on Stellar...');
+          
+          // Update order status to indicate escrow deployment success
+          storedOrder.status = 'escrow_deployed';
+          storedOrder.ethTxHash = txHash;
+          
+          // Process cross-chain transfer to Stellar
+          await processEscrowToStellar(orderId, storedOrder);
+          
+          return res.json({
+            success: true,
+            orderId,
+            message: '🏭 Escrow deployed and Stellar transfer initiated',
+            status: 'processing_stellar_transfer'
+          });
+          
+        } catch (escrowError: any) {
+          console.error('❌ Escrow processing failed:', escrowError);
+          storedOrder.status = 'escrow_failed';
+          
+          return res.status(500).json({
+            error: 'Escrow processing failed',
+            details: escrowError.message
+          });
+        }
+      }
 
       console.log('🚨 DEBUG: About to determine direction...', { stellarTxHash, txHash });
 
@@ -732,15 +915,22 @@ async function initializeRelayer() {
         console.log('🔗 Loading Stellar SDK...');
         const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = await import('@stellar/stellar-sdk');
         
-        // Setup Stellar server (testnet)
-        const server = new Horizon.Server('https://horizon-testnet.stellar.org');
+        // Setup Stellar server (dynamic network based on stored order)
+        const dynamicNetwork = storedOrder.contractType?.includes('ONEINCH') ? 'mainnet' : 'testnet';
+        const stellarConfig = NETWORK_CONFIG[dynamicNetwork].stellar;
+        const server = new Horizon.Server(stellarConfig.horizonUrl);
+        
+        console.log(`🔗 Using Stellar ${dynamicNetwork}:`, {
+          horizonUrl: stellarConfig.horizonUrl,
+          detectedFrom: storedOrder.contractType
+        });
         
         // Relayer Stellar keys (from environment)
         const relayerKeypair = Keypair.fromSecret(
           process.env.RELAYER_STELLAR_SECRET || 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
         );
         
-        console.log('🔗 Connecting to Stellar testnet...');
+        console.log(`🔗 Connecting to Stellar ${dynamicNetwork}...`);
         const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
         console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
 
@@ -759,10 +949,11 @@ async function initializeRelayer() {
           amount: xlmAmount
         });
         
-        // Build transaction
+        // Build transaction with dynamic network
+        const networkPassphrase = dynamicNetwork === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
         const transaction = new TransactionBuilder(relayerAccount, {
           fee: BASE_FEE,
-          networkPassphrase: Networks.TESTNET
+          networkPassphrase: networkPassphrase
         })
           .addOperation(payment)
           .addMemo(Memo.text(`Bridge:${orderId.substring(0, 20)}`))
@@ -1055,7 +1246,7 @@ async function initializeRelayer() {
   // Setup EscrowFactory contract instance for event listening
   try {
     const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-    const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+    const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
     
     // Get relayer wallet for proxy operations
     const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
@@ -1064,29 +1255,30 @@ async function initializeRelayer() {
     
     console.log('🔑 Relayer address for proxy operations:', relayerAddress);
     
-    // Check if relayer is authorized
-    try {
-      const contractWithProvider = escrowFactoryContract as any;
-      const isAuthorized = await contractWithProvider.authorizedResolvers(relayerAddress);
-      
-      if (isAuthorized) {
-        console.log('✅ Relayer is authorized - EscrowFactory ready!');
-      } else {
-        console.log('⚠️  WARNING: Relayer is NOT authorized!');
-        console.log('   📌 Users cannot create escrows directly');
-        console.log('   📌 Run: POST /api/admin/authorize-relayer with admin key');
-        console.log('   📌 Or use HTLC Bridge instead (no authorization needed)');
-      }
-    } catch (error) {
-      console.error('❌ Failed to check relayer authorization:', error);
-    }
+    // Skip authorization check to reduce API calls and avoid spam
+    console.log('💡 To authorize relayer: POST /api/admin/authorize-relayer');
+    console.log('⚠️  Skipping authorization check to reduce API rate limit issues');
     
     // Monitor incoming ETH transfers to relayer using simpler approach
     let lastProcessedBlock = await provider.getBlockNumber();
     
     setInterval(async () => {
       try {
-        const currentBlock = await provider.getBlockNumber();
+        // Add retry logic for block number
+        let currentBlock;
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            currentBlock = await provider.getBlockNumber();
+            break;
+          } catch (error: any) {
+            if (error?.code === 429 && retry < 2) {
+              console.log(`⏳ Rate limited getting block number, waiting ${(retry + 1) * 2}s...`);
+              await new Promise(resolve => setTimeout(resolve, (retry + 1) * 2000));
+              continue;
+            }
+            throw error;
+          }
+        }
         
         // Check new blocks for transfers
         for (let blockNum = lastProcessedBlock + 1; blockNum <= currentBlock; blockNum++) {
@@ -1095,7 +1287,21 @@ async function initializeRelayer() {
           
           // Check each transaction
           for (const txHash of block.transactions) {
-            const tx = await provider.getTransaction(txHash);
+            // Add retry logic for API calls
+            let tx;
+            for (let retry = 0; retry < 3; retry++) {
+              try {
+                tx = await provider.getTransaction(txHash);
+                break;
+              } catch (error: any) {
+                if (error?.code === 429 && retry < 2) {
+                  console.log(`⏳ Rate limited, retrying in ${(retry + 1) * 2}s...`);
+                  await new Promise(resolve => setTimeout(resolve, (retry + 1) * 2000));
+                  continue;
+                }
+                throw error;
+              }
+            }
             if (!tx) continue;
             
             // Check if it's ETH transfer to relayer
@@ -1124,31 +1330,46 @@ async function initializeRelayer() {
       } catch (error) {
         console.error('❌ Error monitoring transfers:', error);
       }
-    }, 10000); // Check every 10 seconds
+    }, RELAYER_CONFIG.pollInterval); // Use configurable poll interval (15s default)
     
     // Function to create escrow for order
     async function createEscrowForOrder(orderData: any, orderId: string, contract: ethers.Contract, wallet: ethers.Wallet) {
       try {
         console.log(`🏭 Creating escrow for order ${orderId}...`);
         
-        const escrowConfig = {
-          token: '0x0000000000000000000000000000000000000000', // ETH
+        // Calculate dynamic safety deposit for this escrow too
+        // orderData.amount is already in wei (string), convert to BigInt directly
+        const orderAmountBigInt = BigInt(orderData.amount);
+        const dynamicSafetyDeposit = orderAmountBigInt / BigInt(100); // 1% of amount
+        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH minimum
+        const actualSafetyDeposit = dynamicSafetyDeposit > MIN_SAFETY_DEPOSIT ? dynamicSafetyDeposit : MIN_SAFETY_DEPOSIT;
+        
+        // Generate order hash if not present
+        const orderHash = orderData.orderHash || ethers.keccak256(
+          ethers.solidityPacked(
+            ['address', 'uint256', 'bytes32', 'uint256'],
+            [orderData.ethAddress, orderAmountBigInt, orderData.hashLock, Math.floor(Date.now() / 1000)]
+          )
+        );
+        
+        // Create IBaseEscrow.Immutables struct for createDstEscrow
+        const dstImmutables = {
+          orderHash: orderHash,
+          hashlock: orderData.hashLock,
+          maker: orderData.ethAddress, // Will be converted to uint256 by ethers
+          taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
+          token: '0x0000000000000000000000000000000000000000', // ETH as uint256
           amount: orderData.amount,
-          hashLock: orderData.hashLock,
-          timelock: orderData.timelock,
-          beneficiary: orderData.ethAddress,
-          refundAddress: orderData.ethAddress,
-          safetyDeposit: '10000000000000000', // 0.01 ETH
-          chainId: 1,
-          stellarTxHash: ethers.ZeroHash,
-          isPartialFillEnabled: orderData.partialFillEnabled || false
+          safetyDeposit: actualSafetyDeposit.toString(),
+          timelocks: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60)) // 2 hours
         };
         
-        const totalValue = BigInt(orderData.amount) + BigInt('10000000000000000');
+        const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
+        const totalValue = orderAmountBigInt + actualSafetyDeposit;
         
-        // Create escrow as authorized resolver using interface
+        // Create escrow as authorized resolver using GERÇEK createDstEscrow interface
         const contractWithSigner = contract.connect(wallet) as any;
-        const tx = await contractWithSigner.createEscrow(escrowConfig, {
+        const tx = await contractWithSigner.createDstEscrow(dstImmutables, srcCancellationTimestamp, {
           value: totalValue,
           gasLimit: 3000000
         });
@@ -1167,32 +1388,50 @@ async function initializeRelayer() {
       }
     }
     
-    // Listen for EscrowCreated events
-    escrowFactoryContract.on('EscrowCreated', async (escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId, event) => {
-      console.log('🏭 EscrowCreated Event:', {
-        escrowId: escrowId.toString(),
-        escrowAddress,
-        resolver,
-        token,
-        amount: ethers.formatEther(amount),
-        hashLock,
-        chainId: chainId.toString(),
-        safetyDeposit: ethers.formatEther(safetyDeposit)
+    // Listen for GERÇEK 1inch SrcEscrowCreated events
+    escrowFactoryContract.on('SrcEscrowCreated', async (srcImmutables, dstImmutablesComplement, event) => {
+      console.log('🏭 SrcEscrowCreated Event:', {
+        orderHash: srcImmutables.orderHash,
+        hashlock: srcImmutables.hashlock,
+        maker: srcImmutables.maker.toString(),
+        taker: srcImmutables.taker.toString(),
+        amount: ethers.formatEther(srcImmutables.amount),
+        safetyDeposit: ethers.formatEther(srcImmutables.safetyDeposit)
       });
       
       // Find related order and update status
       for (const [orderId, orderData] of activeOrders.entries()) {
-        if (orderData.hashLock === hashLock) {
-          console.log(`✅ Matched escrow ${escrowId} with order ${orderId}`);
-          orderData.escrowId = escrowId.toString();
-          orderData.escrowAddress = escrowAddress;
-          orderData.status = 'escrow_active';
+        if (orderData.hashLock === srcImmutables.hashlock) {
+          console.log(`✅ Matched src escrow ${srcImmutables.orderHash} with order ${orderId}`);
+          orderData.orderHash = srcImmutables.orderHash;
+          orderData.status = 'src_escrow_created';
           break;
         }
       }
     });
     
-    // Listen for EscrowFunded events
+    // Listen for GERÇEK 1inch DstEscrowCreated events
+    escrowFactoryContract.on('DstEscrowCreated', async (escrowAddress, hashlock, taker, event) => {
+      console.log('🏭 DstEscrowCreated Event:', {
+        escrowAddress,
+        hashlock,
+        taker: taker.toString()
+      });
+      
+      // Find related order and update status
+      for (const [orderId, orderData] of activeOrders.entries()) {
+        if (orderData.hashLock === hashlock) {
+          console.log(`✅ Matched dst escrow ${escrowAddress} with order ${orderId}`);
+          orderData.escrowAddress = escrowAddress;
+          orderData.status = 'dst_escrow_created';
+          break;
+        }
+      }
+    });
+    
+    // NOTE: EscrowFunded event not present in real 1inch EscrowFactory ABI
+    // Commented out to prevent errors
+    /*
     escrowFactoryContract.on('EscrowFunded', async (escrowId, funder, amount, safetyDeposit, event) => {
       console.log('💰 EscrowFunded Event:', {
         escrowId: escrowId.toString(),
@@ -1211,6 +1450,7 @@ async function initializeRelayer() {
         }
       }
     });
+    */
     
     console.log('✅ EscrowFactory event listeners set up successfully');
   } catch (error) {
@@ -1234,7 +1474,7 @@ async function initializeRelayer() {
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
       const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
-      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, adminWallet);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, adminWallet);
       
       // Get relayer address
       const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
@@ -1270,7 +1510,7 @@ async function initializeRelayer() {
   app.get('/api/admin/relayer-status', async (req, res) => {
     try {
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
       
       const relayerPrivateKey = process.env.RELAYER_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001';
       const relayerWallet = new ethers.Wallet(relayerPrivateKey);
@@ -1299,6 +1539,49 @@ async function initializeRelayer() {
   });
 
   console.log('✅ Admin endpoints registered');
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════
+  // DEBUG ENDPOINT
+  // ═══════════════════════════════════════════════════════════════════════════════════════
+  
+  app.post('/api/debug/body', (req, res) => {
+    console.log('DEBUG: Request body:', req.body);
+    console.log('DEBUG: Request headers:', req.headers);
+    res.json({
+      success: true,
+      body: req.body,
+      headers: req.headers
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════
+  // 1INCH ESCROW FACTORY ENDPOINTS - Using deploySrc approach
+  // ═══════════════════════════════════════════════════════════════════════════════════════
+
+  // Get escrow factory information
+  app.get('/api/escrow/info', async (req, res) => {
+    try {
+      console.log('🏭 Getting 1inch Escrow Factory info...');
+      
+      const escrowFactoryAddress = getEscrowFactoryAddress('mainnet');
+      
+      res.json({
+        success: true,
+        escrowFactory: escrowFactoryAddress,
+        method: 'deploySrc',
+        note: 'Using 1inch cross-chain resolver pattern'
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Failed to get escrow info:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  console.log('✅ Escrow Factory endpoints registered');
 
   // Start HTTP server
   const server = app.listen(RELAYER_CONFIG.port, () => {
@@ -2023,7 +2306,7 @@ app.post('/presets/optimize', async (req, res) => {
       console.log('🧪 Testing EscrowFactory connection...');
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
       
       // Get basic contract info
       const [totalEscrows, minSafetyDeposit, maxSafetyDeposit] = await Promise.all([
@@ -2034,7 +2317,7 @@ app.post('/presets/optimize', async (req, res) => {
       
       res.json({
         success: true,
-        escrowFactoryAddress: ESCROW_FACTORY_ADDRESS,
+        escrowFactoryAddress: getEscrowFactoryAddress(),
         contractInfo: {
           totalEscrows: totalEscrows.toString(),
           minSafetyDeposit: ethers.formatEther(minSafetyDeposit),
@@ -2059,7 +2342,7 @@ app.post('/presets/optimize', async (req, res) => {
       console.log(`🔍 Getting escrow details for ID: ${escrowId}`);
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
-      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, provider);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, provider);
       
       const escrowData = await escrowFactoryContract.getEscrow(escrowId);
       
@@ -2113,7 +2396,7 @@ app.post('/presets/optimize', async (req, res) => {
       
       const provider = new ethers.JsonRpcProvider(RELAYER_CONFIG.ethereum.rpcUrl);
       const adminWallet = new ethers.Wallet(adminPrivateKey, provider);
-      const escrowFactoryContract = new ethers.Contract(ESCROW_FACTORY_ADDRESS, ESCROW_FACTORY_ABI, adminWallet);
+      const escrowFactoryContract = new ethers.Contract(getEscrowFactoryAddress(), ESCROW_FACTORY_ABI, adminWallet);
       
       // Check if already authorized
       const contractWithProvider = escrowFactoryContract as any;
@@ -2153,6 +2436,81 @@ app.post('/presets/optimize', async (req, res) => {
       });
     }
   });
+
+
+
+// Function to process Escrow deployment and send XLM to user
+async function processEscrowToStellar(orderId: string, storedOrder: any) {
+  console.log(`🔄 Processing Escrow → Stellar transfer for order ${orderId}...`);
+  
+  try {
+    // Dynamic import Stellar SDK
+    const { Horizon, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE, Memo } = 
+      await import('@stellar/stellar-sdk');
+    
+    // Setup Stellar network (mainnet for escrow orders)
+    const stellarConfig = NETWORK_CONFIG.mainnet.stellar;
+    const server = new Horizon.Server(stellarConfig.horizonUrl);
+    
+    console.log('🔗 Using Stellar Mainnet for escrow completion');
+    
+    // Relayer Stellar keys
+    const relayerKeypair = Keypair.fromSecret(
+      process.env.RELAYER_STELLAR_SECRET_MAINNET || 
+      process.env.RELAYER_STELLAR_SECRET ||
+      'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+    );
+    
+    const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
+    console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
+    
+    // Calculate XLM amount based on exchange rate
+    const exchangeRate = storedOrder.exchangeRate || ETH_TO_XLM_RATE;
+    const xlmAmount = (parseFloat(storedOrder.amount) * exchangeRate).toFixed(7);
+    
+    console.log('💱 Exchange rate:', exchangeRate, 'XLM per ETH');
+    console.log('🎯 Sending XLM to:', storedOrder.stellarAddress);
+    console.log('💰 XLM amount:', xlmAmount);
+    
+    // Create payment to user on Stellar (simplified approach)
+    const payment = Operation.payment({
+      destination: storedOrder.stellarAddress,
+      asset: Asset.native(),
+      amount: xlmAmount
+    });
+    
+    // Build transaction
+    const transaction = new TransactionBuilder(relayerAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.PUBLIC // Mainnet
+    })
+      .addOperation(payment)
+      .addMemo(Memo.text(`EscrowBridge:${orderId.substring(0, 20)}`))
+      .setTimeout(300)
+      .build();
+    
+    // Sign and submit
+    transaction.sign(relayerKeypair);
+    const result = await server.submitTransaction(transaction);
+    
+    console.log('✅ XLM payment sent:', result.hash);
+    console.log('🌐 View on Stellar Explorer:', `https://stellarchain.io/transactions/${result.hash}`);
+    
+    // Update order status
+    storedOrder.status = 'completed';
+    storedOrder.stellarTxHash = result.hash;
+    storedOrder.completedAt = new Date().toISOString();
+    
+    console.log(`🎉 Escrow bridge completed for order ${orderId}!`);
+    
+  } catch (error) {
+    console.error(`❌ Failed to process Escrow → Stellar transfer:`, error);
+    
+    // Update order status to error
+    storedOrder.status = 'stellar_transfer_failed';
+    storedOrder.error = error instanceof Error ? error.message : 'Unknown error';
+  }
+}
 
 // Start relayer (always initialize when module loads)
 initializeRelayer().catch(error => {

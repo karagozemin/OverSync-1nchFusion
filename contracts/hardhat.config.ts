@@ -26,8 +26,8 @@ const config: HardhatUserConfig = {
       accounts: process.env.RELAYER_PRIVATE_KEY ? [process.env.RELAYER_PRIVATE_KEY] : [],
     },
     mainnet: {
-      url: process.env.MAINNET_RPC_URL || "https://mainnet.infura.io/v3/your-key", 
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      url: process.env.MAINNET_RPC_URL || process.env.ETHEREUM_RPC_URL || "https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY_HERE", 
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : (process.env.RELAYER_PRIVATE_KEY ? [process.env.RELAYER_PRIVATE_KEY] : []),
     },
   },
   gasReporter: {

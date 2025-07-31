@@ -46,8 +46,8 @@ function App() {
     // Auto-switch MetaMask network if connected
     if (window.ethereum && ethAddress) {
       try {
-        const targetChainId = newNetwork === 'mainnet' ? '0x1' : '0xaa36a7';
-        const networkName = newNetwork === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
+        const targetChainId = newNetwork === 'mainnet' ? '0x1' : '0xaa36a7'; // 0x1 = 1 (Ethereum Mainnet)
+    const networkName = newNetwork === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
         
         console.log(`🔗 Auto-switching MetaMask to ${networkName}...`);
         
@@ -69,9 +69,9 @@ function App() {
             await window.ethereum.request({
               method: 'wallet_addEthereumChain',
               params: [{
-                chainId: '0x1',
+                chainId: '0x1', // 1 for Ethereum Mainnet
                 chainName: 'Ethereum Mainnet',
-                rpcUrls: ['https://mainnet.infura.io/v3/'],
+                rpcUrls: ['https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY_HERE'],
                 blockExplorerUrls: ['https://etherscan.io'],
                 nativeCurrency: {
                   name: 'Ether',

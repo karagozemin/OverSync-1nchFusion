@@ -372,10 +372,15 @@ export class Phase6BridgeService extends EventEmitter {
       this.emit('ethereumOrderRefunded', { orderId, refundee, amount, safetyDeposit });
     });
     
-    // EscrowFactory events
-    this.config.escrowFactoryContract.on('EscrowCreated', (escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId) => {
-      console.log(`🏭 EscrowCreated event: ${escrowId}`);
-      this.emit('escrowCreated', { escrowId, escrowAddress, resolver, token, amount, hashLock, timelock, safetyDeposit, chainId });
+    // GERÇEK 1inch EscrowFactory events
+    this.config.escrowFactoryContract.on('SrcEscrowCreated', (srcImmutables, dstImmutablesComplement) => {
+      console.log(`🏭 SrcEscrowCreated event: ${srcImmutables.orderHash}`);
+      this.emit('srcEscrowCreated', { srcImmutables, dstImmutablesComplement });
+    });
+    
+    this.config.escrowFactoryContract.on('DstEscrowCreated', (escrowAddress, hashlock, taker) => {
+      console.log(`🏭 DstEscrowCreated event: ${escrowAddress}`);
+      this.emit('dstEscrowCreated', { escrowAddress, hashlock, taker });
     });
     
     console.log('✅ Event listeners set up');
