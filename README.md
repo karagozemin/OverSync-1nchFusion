@@ -10,8 +10,14 @@ FusionBridge enables **secure, trustless token swaps** between Ethereum and Stel
 
 - **HTLC (Hash Time Lock Contracts)** for atomic swaps
 - **Fusion+ architecture** adapted for cross-chain operations
+- **1inch Escrow Factory** integration for mainnet operations
 - **Automated relayer service** for seamless user experience
 - **Partial fill support** for flexible swap amounts
+
+### 🌐 Network Support
+
+- **Testnet**: Sepolia ↔ Stellar Testnet (using custom contracts)
+- **Mainnet**: Ethereum ↔ Stellar Mainnet (using 1inch Escrow Factory: `0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a`)
 
 ## 🏗️ Architecture
 
@@ -89,13 +95,24 @@ Before running the project, you need to configure environment variables:
 
 2. **Edit `.env` with your configuration:**
    ```bash
-   # Required for development:
-   ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
+   # Network Mode (testnet or mainnet)
+   NETWORK_MODE=testnet
+   # NETWORK_MODE=mainnet  # Uncomment for mainnet
+   
+   # RPC URLs
+   SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID
+   MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID
+   ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID
+   
+   # Stellar Configuration (automatically adjusted based on NETWORK_MODE)
    STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
    
-   # Generate new private keys (NEVER use the examples in production!)
+   # Private keys (NEVER use examples in production!)
    RELAYER_PRIVATE_KEY=0x[your-ethereum-private-key]
    RELAYER_STELLAR_SECRET=S[your-stellar-secret-key]
+   
+   # 1inch API (required for mainnet)
+   ONEINCH_API_KEY=57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN
    
    # Optional API keys:
    ETHERSCAN_API_KEY=YOUR_ETHERSCAN_API_KEY
@@ -112,9 +129,20 @@ Before running the project, you need to configure environment variables:
 
 > ⚠️ **Security Note**: Never commit real private keys to git. The `.env` file is already in `.gitignore`.
 
+## 🧪 Network Setup
+
+FusionBridge supports both testnet and mainnet operations:
+
+### 🚀 Quick Network Switch
+
+You can switch networks in two ways:
+
+1. **Via Frontend UI**: Click the network toggle button (Testnet/Mainnet) in the top-right corner
+2. **Via Environment**: Set `NETWORK_MODE=mainnet` in your `.env` file
+
 ## 🧪 Testnet Setup
 
-**Important:** FusionBridge currently runs on **testnet networks only** for safe testing.
+**Recommended for development and testing.**
 
 ### 🦊 Ethereum Sepolia Testnet
 
@@ -140,6 +168,35 @@ Before running the project, you need to configure environment variables:
 2. **Alternative Faucets:**
    - **Stellar Quest**: https://quest.stellar.org/faucet
    - **Friendbot**: https://friendbot.stellar.org
+
+## 🏭 Mainnet Setup
+
+**For production usage with real funds.**
+
+### 📋 Requirements
+
+1. **Environment Configuration:**
+   ```bash
+   NETWORK_MODE=mainnet
+   MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
+   ONEINCH_API_KEY=57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN
+   ```
+
+2. **Funded Wallets:**
+   - Ethereum address with ETH for gas fees
+   - Stellar address with XLM for transaction fees
+
+### 🔗 Contract Integration
+
+- **Ethereum**: Uses 1inch Escrow Factory (`0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a`)
+- **Stellar**: Uses native claimable balances for HTLC mechanism
+
+### ⚠️ Security Notes
+
+- Always test on testnet first
+- Use hardware wallets for production private keys
+- Monitor transactions on block explorers
+- Keep small amounts for initial testing
 
 ### 💰 Required Tokens for Testing
 

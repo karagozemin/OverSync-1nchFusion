@@ -89,9 +89,9 @@ export const STELLAR_NETWORKS: Record<string, StellarNetworkConfig> = {
 export const CONTRACT_ADDRESSES = {
   ethereum: {
     mainnet: {
-      htlcBridge: '0x0000000000000000000000000000000000000000',
-      escrowFactory: '0x0000000000000000000000000000000000000000',
-      testToken: '0x0000000000000000000000000000000000000000',
+      htlcBridge: '0x0000000000000000000000000000000000000000', // Will use 1inch escrow instead
+      escrowFactory: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Escrow Factory
+      testToken: '0xA0b86a33E6441b8bB770AE39aaDC4e75C0f03E6F', // WETH mainnet
     },
     sepolia: {
       htlcBridge: '0x3f344ACDd17a0c4D21096da895152820f595dc8A',
@@ -102,8 +102,9 @@ export const CONTRACT_ADDRESSES = {
   stellar: {
     mainnet: {
       // Stellar uses account addresses, not contract addresses
-      bridgeAccount: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-      escrowAccount: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      // These should be actual funded accounts for mainnet operations
+      bridgeAccount: 'GCKFBEIYTKP6RSTVVK6FKXKMK7DIS3R6SEWXO5SWH3V7GDPRX2VDKYXB', // Replace with actual mainnet bridge account
+      escrowAccount: 'GCKFBEIYTKP6RSTVVK6FKXKMK7DIS3R6SEWXO5SWH3V7GDPRX2VDKYXB', // Replace with actual mainnet escrow account
     },
     testnet: {
       bridgeAccount: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
@@ -143,9 +144,24 @@ export const FAUCETS = {
   },
 };
 
-// Environment-based configuration
+// Environment-based configuration with URL parameter support
 export const getCurrentNetwork = () => {
-  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  let networkName = 'testnet';
+  
+  // Check URL parameters first (for dynamic switching)
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlNetwork = urlParams.get('network');
+    if (urlNetwork === 'mainnet' || urlNetwork === 'testnet') {
+      networkName = urlNetwork;
+    }
+  }
+  
+  // Fallback to environment variable
+  if (networkName === 'testnet') {
+    networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  }
+  
   return {
     ethereum: ETHEREUM_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
     stellar: STELLAR_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
@@ -153,7 +169,22 @@ export const getCurrentNetwork = () => {
 };
 
 export const getContractAddresses = () => {
-  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  let networkName = 'testnet';
+  
+  // Check URL parameters first
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlNetwork = urlParams.get('network');
+    if (urlNetwork === 'mainnet' || urlNetwork === 'testnet') {
+      networkName = urlNetwork;
+    }
+  }
+  
+  // Fallback to environment variable
+  if (networkName === 'testnet') {
+    networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  }
+  
   return {
     ethereum: CONTRACT_ADDRESSES.ethereum[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
     stellar: CONTRACT_ADDRESSES.stellar[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
@@ -172,6 +203,21 @@ export const getFaucets = () => {
 };
 
 export const isTestnet = () => {
-  const networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  let networkName = 'testnet';
+  
+  // Check URL parameters first
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlNetwork = urlParams.get('network');
+    if (urlNetwork === 'mainnet' || urlNetwork === 'testnet') {
+      networkName = urlNetwork;
+    }
+  }
+  
+  // Fallback to environment variable
+  if (networkName === 'testnet') {
+    networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  }
+  
   return networkName !== 'mainnet';
 }; 

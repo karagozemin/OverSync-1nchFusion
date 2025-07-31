@@ -5,6 +5,7 @@ import TransactionHistory from './components/TransactionHistory'
 
 import { ToastContainer, useToast } from './components/Toast'
 import { useFreighter } from './hooks/useFreighter'
+import { isTestnet } from './config/networks'
 
 // Window objeleri için type definitions
 declare global {
@@ -22,6 +23,7 @@ function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'bridge' | 'history'>('bridge');
+  const [currentNetwork, setCurrentNetwork] = useState<'testnet' | 'mainnet'>(isTestnet() ? 'testnet' : 'mainnet');
   
   // Freighter hook usage
   const {
@@ -35,6 +37,80 @@ function App() {
 
   // Toast hook
   const toast = useToast();
+
+  // Network toggle handler with MetaMask auto-switching
+  const toggleNetwork = async () => {
+    const newNetwork = currentNetwork === 'testnet' ? 'mainnet' : 'testnet';
+    setCurrentNetwork(newNetwork);
+    
+    // Auto-switch MetaMask network if connected
+    if (window.ethereum && ethAddress) {
+      try {
+        const targetChainId = newNetwork === 'mainnet' ? '0x1' : '0xaa36a7';
+        const networkName = newNetwork === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
+        
+        console.log(`🔗 Auto-switching MetaMask to ${networkName}...`);
+        
+        // Try to switch network
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: targetChainId }],
+        });
+        
+        console.log(`✅ MetaMask switched to ${networkName}`);
+        toast.success('Network Switched!', `MetaMask switched to ${networkName}`);
+        
+      } catch (switchError: any) {
+        console.log('🔄 Network switch error:', switchError);
+        
+        // If network not added (error 4902), add it
+        if (switchError.code === 4902 && newNetwork === 'mainnet') {
+          try {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: '0x1',
+                chainName: 'Ethereum Mainnet',
+                rpcUrls: ['https://mainnet.infura.io/v3/'],
+                blockExplorerUrls: ['https://etherscan.io'],
+                nativeCurrency: {
+                  name: 'Ether',
+                  symbol: 'ETH',
+                  decimals: 18
+                }
+              }],
+            });
+            console.log('✅ Ethereum Mainnet added and switched');
+            toast.success('Network Added!', 'Ethereum Mainnet added to MetaMask');
+          } catch (addError: any) {
+            console.error('❌ Failed to add Ethereum Mainnet:', addError);
+            toast.error('Network Switch Failed', 'Please switch MetaMask manually');
+          }
+        } else {
+          console.log('⚠️ User rejected network switch or other error');
+          toast.warning('Manual Switch Required', 'Please switch MetaMask network manually');
+        }
+      }
+    }
+    
+    // Update URL parameter
+    if (typeof window !== 'undefined') {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('network', newNetwork);
+      window.history.replaceState({}, '', currentUrl.toString());
+      
+      // Show network change notification
+      toast.success(
+        'Network Mode Changed!', 
+        `Switched to ${newNetwork === 'mainnet' ? 'Mainnet' : 'Testnet'} mode`
+      );
+      
+      // Auto refresh after 2 seconds to apply network changes
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    }
+  };
 
   // Dutch Auction state
   const [auctionData] = useState({
@@ -117,6 +193,21 @@ function App() {
           <nav className="hidden md:flex items-center gap-6">
             <a href="https://www.alchemy.com/faucets/ethereum-sepolia" target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-white transition-colors">Faucet</a>
           </nav>
+          
+          {/* Network Toggle Button */}
+          <button
+            onClick={toggleNetwork}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
+              currentNetwork === 'mainnet'
+                ? 'bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30'
+                : 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30'
+            }`}
+          >
+            <div className={`w-2 h-2 rounded-full ${
+              currentNetwork === 'mainnet' ? 'bg-green-400' : 'bg-yellow-400'
+            }`}></div>
+            {currentNetwork === 'mainnet' ? 'Mainnet' : 'Testnet'}
+          </button>
           
           {/* Connect Wallet Button */}
           <div className="relative">

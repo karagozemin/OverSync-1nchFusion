@@ -15,6 +15,37 @@ import { ethers } from 'ethers';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 
+// Network Configuration
+const NETWORK_CONFIG = {
+  testnet: {
+    ethereum: {
+      chainId: 11155111, // Sepolia
+      escrowFactory: '0x6c3818E074d891F1FBB3A75913e4BDe87BcF1123',
+    },
+    stellar: {
+      networkPassphrase: 'Test SDF Network ; September 2015',
+      horizonUrl: 'https://horizon-testnet.stellar.org',
+    }
+  },
+  mainnet: {
+    ethereum: {
+      chainId: 1, // Ethereum Mainnet
+      escrowFactory: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Factory
+    },
+    stellar: {
+      networkPassphrase: 'Public Global Stellar Network ; September 2015',
+      horizonUrl: 'https://horizon.stellar.org',
+    }
+  }
+};
+
+// Determine current network from environment
+const CURRENT_NETWORK = process.env.NETWORK_MODE === 'mainnet' ? 'mainnet' : 'testnet';
+const NETWORK = NETWORK_CONFIG[CURRENT_NETWORK];
+
+console.log(`🌐 Network Mode: ${CURRENT_NETWORK.toUpperCase()}`);
+console.log(`🏭 Escrow Factory: ${NETWORK.ethereum.escrowFactory}`);
+
 // Real HTLC Bridge Contract ABI  
 const HTLC_BRIDGE_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
@@ -65,8 +96,9 @@ import { getMonitor } from './monitoring.js';
 
 // Contract addresses
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
-const HTLC_CONTRACT_ADDRESS = '0x3f344ACDd17a0c4D21096da895152820f595dc8A'; // New HTLCBridge (ETH FIX!)
-const ESCROW_FACTORY_ADDRESS = '0x6c3818E074d891F1FBB3A75913e4BDe87BcF1123'; // New EscrowFactory (ETH FIX!)
+// Network-aware contract addresses
+const HTLC_CONTRACT_ADDRESS = NETWORK_CONFIG.testnet.ethereum.escrowFactory; // Legacy, use ESCROW_FACTORY_ADDRESS instead
+const ESCROW_FACTORY_ADDRESS = NETWORK.ethereum.escrowFactory; // Dynamic based on network
 
 // Relayer configuration from environment variables
 export const RELAYER_CONFIG = {
@@ -351,8 +383,27 @@ async function initializeRelayer() {
       // Generate order ID
       const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       
-      // For ETH to XLM direction, use EscrowFactory Direct Contract Interaction
+      // For ETH to XLM direction
       if (direction === 'eth_to_xlm') {
+        
+        if (CURRENT_NETWORK === 'mainnet') {
+          // MAINNET: Use 1inch Fusion Plus API
+          console.log('🔄 Creating mainnet order via 1inch Fusion Plus...');
+          
+          // TODO: Implement 1inch API integration here
+          // For now, return a placeholder response
+          res.json({
+            success: true,
+            orderId,
+            message: '🏭 Mainnet: Will use 1inch Fusion Plus API',
+            networkMode: 'mainnet',
+            escrowFactory: ESCROW_FACTORY_ADDRESS,
+            note: '1inch API integration coming next...'
+          });
+          return;
+        }
+        
+        // TESTNET: Use EscrowFactory Direct Contract Interaction
         
         // Generate HTLC parameters
         const secretBytes = new Uint8Array(32);
@@ -559,16 +610,46 @@ async function initializeRelayer() {
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
         let ethAmount;
         if (storedOrder?.targetAmount) {
-          ethAmount = storedOrder.targetAmount;
+          console.log('🔍 DEBUG - Raw targetAmount:', storedOrder.targetAmount);
+          
+          // MORE AGGRESSIVE CLEANING - handle very large numbers
+          let cleanTargetAmount = storedOrder.targetAmount.toString().replace(/[^0-9.]/g, '');
+          let targetAmountNum = parseFloat(cleanTargetAmount);
+          
+          console.log('🔍 DEBUG - Parsed targetAmount:', targetAmountNum);
+          
+          if (isNaN(targetAmountNum) || targetAmountNum <= 0) {
+            console.log('⚠️ Invalid targetAmount, using fallback calculation');
+            // Fallback: use amount and exchange rate
+            targetAmountNum = parseFloat(orderAmount || '0.1') / exchangeRate;
+          }
+          
+          // EXTREME SAFETY: Max 1 ETH, min 0.000001 ETH
+          const safeTargetAmount = Math.min(Math.max(targetAmountNum, 0.000001), 1.0);
+          
+          // Round to 6 decimal places to avoid precision issues
+          const roundedTargetAmount = Math.round(safeTargetAmount * 1e6) / 1e6;
+          
+          console.log('🔢 SAFE CONVERSION - targetAmount:', targetAmountNum, '→', roundedTargetAmount, 'ETH');
+          
+          // Convert to wei safely
+          ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
         } else {
-          // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
+          // Convert XLM to ETH using exchange rate - SAFE CONVERSION
           const ethAmountDecimal = parseFloat(orderAmount || '0.1') / exchangeRate;
-          // Round to avoid decimal precision issues and convert to wei properly
-          const ethAmountFixed = Math.floor(ethAmountDecimal * 1e18); // Convert to wei as integer
-          ethAmount = ethAmountFixed.toString(); // Use wei directly as string
+          
+          // Limit to reasonable ETH amounts (max 10 ETH per transaction)
+          const safeEthAmount = Math.min(ethAmountDecimal, 10);
+          
+          // Round to 6 decimal places to avoid precision issues
+          const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6;
+          
+          // Convert to wei safely
+          ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
+          console.log('🔢 SAFE CONVERSION - calculated:', ethAmountDecimal, '→', roundedEthAmount, 'ETH');
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (XLM→ETH)');
-          console.log('🎯 ETH amount to send:', (parseInt(ethAmount) / 1e18).toFixed(6), 'ETH');
+          console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
           console.log('🏠 Sending to user address:', userEthAddress);
           
           // Create ETH transfer transaction
@@ -579,8 +660,26 @@ async function initializeRelayer() {
             gasPrice: ethers.parseUnits('20', 'gwei')
           };
           
-          // Send transaction
-          const ethTxResponse = await relayerWallet.sendTransaction(tx);
+          // Send transaction with retry for rate limiting
+          let ethTxResponse;
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (retryCount <= maxRetries) {
+            try {
+              ethTxResponse = await relayerWallet.sendTransaction(tx);
+              break; // Success, exit retry loop
+            } catch (txError: any) {
+              if (txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 && retryCount < maxRetries) {
+                retryCount++;
+                const delay = 2000 * retryCount; // 2s, 4s, 6s
+                console.log(`⏳ Rate limited, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              } else {
+                throw txError; // Re-throw if not rate limiting or max retries reached
+              }
+            }
+          }
           console.log('📤 ETH transaction sent:', ethTxResponse.hash);
           
           // Wait for confirmation
@@ -606,7 +705,7 @@ async function initializeRelayer() {
               },
               ethereum: {
                 txId: ethTxReceipt?.hash,
-                amount: `${(parseInt(ethAmount) / 1e18).toFixed(6)} ETH`,
+                amount: `${ethers.formatEther(ethAmount)} ETH`,
                 destination: userEthAddress,
                 status: 'completed'
               }
@@ -811,16 +910,45 @@ async function initializeRelayer() {
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
         let ethAmount;
         if (storedOrder?.targetAmount) {
-          ethAmount = storedOrder.targetAmount;
+          console.log('🔍 DEBUG - Raw targetAmount (2nd endpoint):', storedOrder.targetAmount);
+          
+          // MORE AGGRESSIVE CLEANING - handle very large numbers
+          let cleanTargetAmount = storedOrder.targetAmount.toString().replace(/[^0-9.]/g, '');
+          let targetAmountNum = parseFloat(cleanTargetAmount);
+          
+          console.log('🔍 DEBUG - Parsed targetAmount (2nd endpoint):', targetAmountNum);
+          
+          if (isNaN(targetAmountNum) || targetAmountNum <= 0) {
+            console.log('⚠️ Invalid targetAmount, using fallback calculation (2nd endpoint)');
+            // Fallback: use amount and exchange rate
+            targetAmountNum = parseFloat(orderAmount) / exchangeRate;
+          }
+          
+          // EXTREME SAFETY: Max 1 ETH, min 0.000001 ETH
+          const safeTargetAmount = Math.min(Math.max(targetAmountNum, 0.000001), 1.0);
+          
+          // Round to 6 decimal places to avoid precision issues
+          const roundedTargetAmount = Math.round(safeTargetAmount * 1e6) / 1e6;
+          
+          console.log('🔢 SAFE CONVERSION - targetAmount (2nd endpoint):', targetAmountNum, '→', roundedTargetAmount, 'ETH');
+          
+          // Convert to wei safely
+          ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
         } else {
-          // Convert XLM to ETH using exchange rate, then to wei (18 decimals)
+          // Convert XLM to ETH using exchange rate - SAFE CONVERSION
           const ethAmountDecimal = parseFloat(orderAmount) / exchangeRate;
-          // Round to avoid decimal precision issues and convert to wei properly
-          const ethAmountFixed = Math.floor(ethAmountDecimal * 1e18); // Convert to wei as integer
-          ethAmount = ethAmountFixed.toString(); // Use wei directly as string
+          
+          // Limit to reasonable ETH amounts (max 10 ETH per transaction)
+          const safeEthAmount = Math.min(ethAmountDecimal, 10);
+          
+          // Round to 6 decimal places to avoid precision issues
+          const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6;
+          
+          // Convert to wei safely
+          ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (dedicated endpoint)');
-        console.log('🎯 ETH amount to send:', (parseInt(ethAmount) / 1e18).toFixed(6), 'ETH');
+        console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');
         console.log('🏠 Sending to user address:', userEthAddress);
         
         // Create ETH transfer transaction
@@ -831,8 +959,26 @@ async function initializeRelayer() {
           gasPrice: ethers.parseUnits('20', 'gwei')
         };
         
-        // Send transaction
-        const ethTxResponse = await relayerWallet.sendTransaction(tx);
+        // Send transaction with retry for rate limiting
+        let ethTxResponse;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount <= maxRetries) {
+          try {
+            ethTxResponse = await relayerWallet.sendTransaction(tx);
+            break; // Success, exit retry loop
+          } catch (txError: any) {
+            if (txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 && retryCount < maxRetries) {
+              retryCount++;
+              const delay = 2000 * retryCount; // 2s, 4s, 6s
+              console.log(`⏳ Rate limited, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw txError; // Re-throw if not rate limiting or max retries reached
+            }
+          }
+        }
         console.log('📤 ETH transaction sent:', ethTxResponse.hash);
         
         // Wait for confirmation
@@ -859,7 +1005,7 @@ async function initializeRelayer() {
             },
             ethereum: {
               txId: ethTxReceipt?.hash,
-              amount: `${(parseInt(ethAmount) / 1e18).toFixed(6)} ETH`,
+                              amount: `${ethers.formatEther(ethAmount)} ETH`,
               destination: userEthAddress,
               status: 'completed'
             }

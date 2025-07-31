@@ -8,6 +8,8 @@ import {
   Networks,
   Memo
 } from '@stellar/stellar-sdk';
+import { isTestnet, getCurrentNetwork, getContractAddresses } from '../config/networks';
+import { oneInchService } from '../services/oneInch';
 
 // Web3 imports for contract interaction
 declare global {
@@ -43,6 +45,9 @@ const XLM_TOKEN = {
 
 // Sabit kur oranı (gerçek uygulamada API'den alınacak)
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
+
+// Network configuration
+const MAINNET_CHAIN_ID = '0x1'; // Ethereum Mainnet
 
 // Helper function to fetch real-time crypto prices with adaptive rate limiting
 const fetchCryptoPrices = async (currentInterval: number, rateLimitCount: number, 
@@ -224,6 +229,19 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://loca
 
 export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormProps) {
   const [direction, setDirection] = useState<'eth_to_xlm' | 'xlm_to_eth'>('eth_to_xlm');
+  const [networkInfo] = useState(() => {
+    const currentNetwork = getCurrentNetwork();
+    const contractAddresses = getContractAddresses();
+    const isTestnetMode = isTestnet();
+    
+    return {
+      isTestnet: isTestnetMode,
+      ethereum: currentNetwork.ethereum,
+      stellar: currentNetwork.stellar,
+      contracts: contractAddresses,
+      expectedChainId: isTestnetMode ? SEPOLIA_CHAIN_ID : MAINNET_CHAIN_ID
+    };
+  });
   const [amount, setAmount] = useState('');
   const [estimatedAmount, setEstimatedAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -472,25 +490,27 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     setIsSubmitting(true);
     setStatusMessage('Hazırlanıyor...');
     
+    let result: any;
+    
     try {
-      // Check if connected to Sepolia
+      // Check network and switch if needed
       console.log('🔗 Checking network...');
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       console.log('🔗 Current chain ID:', chainId);
       
-      if (chainId !== SEPOLIA_CHAIN_ID) {
-        console.log('🔗 Switching to Sepolia...');
+      if (chainId !== networkInfo.expectedChainId) {
+        const networkName = networkInfo.isTestnet ? 'Sepolia Testnet' : 'Ethereum Mainnet';
+        console.log(`🔗 Switching to ${networkName}...`);
+        
         try {
           await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: SEPOLIA_CHAIN_ID }],
+            params: [{ chainId: networkInfo.expectedChainId }],
           });
         } catch (switchError: any) {
           if (switchError.code === 4902) {
             // Network not added yet
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
+            const networkConfig = networkInfo.isTestnet ? {
                 chainId: SEPOLIA_CHAIN_ID,
                 chainName: 'Sepolia Testnet',
                 rpcUrls: ['https://sepolia.infura.io/v3/'],
@@ -500,7 +520,21 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                   symbol: 'SEP',
                   decimals: 18
                 }
-              }],
+            } : {
+              chainId: MAINNET_CHAIN_ID,
+              chainName: 'Ethereum Mainnet',
+              rpcUrls: ['https://mainnet.infura.io/v3/'],
+              blockExplorerUrls: ['https://etherscan.io'],
+              nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18
+              }
+            };
+            
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [networkConfig],
             });
           } else {
             throw switchError;
@@ -508,7 +542,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         }
       }
 
-      console.log('🔄 Creating bridge order via Relayer API...');
+      if (networkInfo.isTestnet) {
+        // TESTNET: Use existing relayer system
+        console.log('🔄 Creating bridge order via Relayer API (Testnet)...');
       setStatusMessage('Order oluşturuluyor...');
       
       // Create order request to relayer
@@ -543,8 +579,60 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         throw new Error(errorData.error || `API Error: ${response.status}`);
       }
       
-      const result = await response.json();
+        result = await response.json();
       console.log('✅ Order created via relayer:', result);
+
+      } else {
+        // MAINNET: Use 1inch Fusion Plus API
+        console.log('🔄 Creating bridge order via 1inch Fusion Plus (Mainnet)...');
+        setStatusMessage('1inch order oluşturuluyor...');
+        
+        try {
+          // Get escrow factory info
+          const escrowInfo = await oneInchService.getEscrowInfo(1); // Chain ID 1 for Ethereum mainnet
+          console.log('🏭 1inch Escrow Info:', escrowInfo);
+          
+          // Create 1inch order
+          const oneInchOrderRequest = {
+            fromTokenAddress: direction === 'eth_to_xlm' ? '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' : '0xA0b86a33E6441b8bB770AE39aaDC4e75C0f03E6F', // ETH or WETH
+            toTokenAddress: '0xA0b86a33E6441b8bB770AE39aaDC4e75C0f03E6F', // WETH (placeholder for XLM destination)
+            amount: (parseFloat(amount) * 1e18).toString(), // Convert to wei
+            fromAddress: ethAddress,
+            slippage: 1, // 1% slippage
+            preset: 'default',
+          };
+          
+          console.log('📋 1inch Order request:', oneInchOrderRequest);
+          
+          const oneInchOrder = await oneInchService.createOrder(oneInchOrderRequest);
+          console.log('✅ 1inch Order created:', oneInchOrder);
+          
+          // Create result object compatible with existing flow
+          result = {
+             success: true,
+             orderId: oneInchOrder.orderHash,
+             orderData: {
+               ...oneInchOrder.order,
+               secret: 'N/A',
+               created: new Date().toISOString(),
+               status: 'pending_1inch_escrow'
+             },
+             approvalTransaction: {
+               to: escrowInfo.escrowFactory,
+               value: '0x0', // No ETH needed for approval
+               data: '0x', // Will be filled by 1inch SDK
+             },
+             message: '🏭 1inch Fusion Plus: Direct escrow creation!',
+             contractType: 'ONEINCH_FUSION_PLUS',
+             contractAddress: escrowInfo.escrowFactory,
+             note: '✅ Using 1inch Fusion Plus for mainnet bridge'
+           };
+          
+        } catch (oneInchError: any) {
+          console.error('❌ 1inch API Error:', oneInchError);
+          throw new Error(`1inch API Error: ${oneInchError.message}`);
+        }
+      }
       
       // Handle different transaction types based on direction
       if (direction === 'eth_to_xlm' && (result.approvalTransaction || result.proxyTransaction)) {
