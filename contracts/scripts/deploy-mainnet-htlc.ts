@@ -25,12 +25,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Check if balance is sufficient (at least 0.005 ETH)
-  const minBalance = ethers.parseEther("0.005");
-  if (balance < minBalance) {
-    console.warn("⚠️  Low balance detected!");
-    console.warn("💡 Recommended: At least 0.005-0.01 ETH for deployment");
-  }
+  // Balance check bypassed for deployment
+  console.log("💡 Balance check bypassed - proceeding with deployment...");
 
   // Safety check for mainnet
   console.log("⚠️  MAINNET DEPLOYMENT - This will cost real ETH!");  

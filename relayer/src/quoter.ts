@@ -54,8 +54,9 @@ export class QuoterService {
     const timeLocks = generateDefaultTimeLocks();
 
     // Safety deposits (0.001 ETH equivalent for now)
-    const srcSafetyDeposit = "1000000000000000"; // 0.001 ETH in wei
-    const dstSafetyDeposit = "1000000000000000"; // 0.001 ETH in wei
+    // Dynamic safety deposits (using minimum baseline for quoter)
+    const srcSafetyDeposit = "50000000000000"; // 0.00005 ETH baseline (under $50)
+    const dstSafetyDeposit = "50000000000000"; // 0.00005 ETH baseline (under $50)
 
     // Whitelist (empty for now - will be populated in Phase 4)
     const whitelist: string[] = [];

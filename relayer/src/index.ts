@@ -15,6 +15,29 @@ import { ethers } from 'ethers';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 
+// Dynamic Safety Deposit Helper Function
+function calculateDynamicSafetyDeposit(amountInWei: string | bigint): bigint {
+  const ETH_USD_PRICE = 3500; // $3500 per ETH
+  const amountInEth = parseFloat(ethers.formatEther(amountInWei.toString()));
+  const amountInUsd = amountInEth * ETH_USD_PRICE;
+  
+  let safetyDepositInEth: number;
+  if (amountInUsd < 50) {
+    safetyDepositInEth = 0.00005; // $50 altı → 0.00005 ETH
+  } else if (amountInUsd < 100) {
+    safetyDepositInEth = 0.0001;  // $50–100 → 0.0001 ETH
+  } else if (amountInUsd < 500) {
+    safetyDepositInEth = 0.0002;  // $100–500 → 0.0002 ETH
+  } else if (amountInUsd < 1000) {
+    safetyDepositInEth = 0.0005;  // $500–1000 → 0.0005 ETH
+  } else {
+    // $1000 üzeri → Math.min(0.002, amountInEth * 0.01)
+    safetyDepositInEth = Math.min(0.002, amountInEth * 0.01);
+  }
+  
+  return ethers.parseEther(safetyDepositInEth.toString());
+}
+
 // Network Configuration
 const NETWORK_CONFIG = {
   testnet: {
@@ -32,7 +55,7 @@ const NETWORK_CONFIG = {
     ethereum: {
       chainId: 1, // Ethereum Mainnet
       escrowFactory: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Factory
-      htlcBridge: '0x0000000000000000000000000000000000000000', // MainnetHTLC (to be deployed)
+      htlcBridge: '0x87372d4bba85acf7c2374b4719a1020e507ab73e', // MainnetHTLC (DEPLOYED!)
     },
     stellar: {
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
@@ -49,6 +72,8 @@ function getNetworkConfig(networkMode?: string): any {
   const selectedNetwork = networkMode || DEFAULT_NETWORK_MODE;
   return NETWORK_CONFIG[selectedNetwork] || NETWORK_CONFIG[DEFAULT_NETWORK_MODE];
 }
+
+
 
 console.log(`🌐 Default Network Mode: ${DEFAULT_NETWORK_MODE.toUpperCase()}`);
 console.log(`🏭 Default Escrow Factory: ${getNetworkConfig().ethereum.escrowFactory}`);
@@ -142,7 +167,15 @@ function getHtlcBridgeAddress(networkMode?: string): string {
 // New function to determine which contract to use based on operation type
 function shouldUseHTLCContract(networkMode?: string): boolean {
   const config = getNetworkConfig(networkMode);
-  // Use HTLC contract if it's available (not zero address)
+  const selectedNetwork = networkMode || DEFAULT_NETWORK_MODE;
+  
+  // MAINNET: Always use 1inch EscrowFactory (mentor requirement)
+  // HTLC only for Stellar side (non-EVM)
+  if (selectedNetwork === 'mainnet') {
+    return false; // Force 1inch EscrowFactory usage
+  }
+  
+  // TESTNET: Use HTLC contract if available
   return config.ethereum.htlcBridge !== '0x0000000000000000000000000000000000000000';
 }
 
@@ -316,7 +349,7 @@ async function initializeRelayer() {
   console.log('🏭 DEFAULT ESCROW FACTORY CONTRACT:', getEscrowFactoryAddress());
     
   // Global order storage (in production this would be a database)
-  const activeOrders = new Map();
+const activeOrders = new Map();
 
   // DEBUG: Simple transaction test
   app.get('/api/test-transaction', (req, res) => {
@@ -492,6 +525,56 @@ async function initializeRelayer() {
           // MAINNET: Use DUAL CONTRACT APPROACH (1inch EscrowFactory + MainnetHTLC)
           const useHTLC = shouldUseHTLCContract('mainnet');
           console.log(`🏭 MAINNET: Using ${useHTLC ? 'HTLC + EscrowFactory' : 'EscrowFactory only'} approach...`);
+
+          // MOCK MODE for ETH→XLM
+          if (RELAYER_CONFIG.enableMockMode) {
+            console.log('🧪 MOCK MODE: Simulating ETH→XLM mainnet escrow creation...');
+            
+            const userAmountWei = ethers.parseEther(amount);
+            const secret = ethers.hexlify(ethers.randomBytes(32));
+            const hashLock = ethers.keccak256(secret);
+            
+            const orderData = {
+              orderId,
+              direction: 'eth_to_xlm',
+              amount: userAmountWei.toString(),
+              ethAddress: normalizedEthAddress,
+              stellarAddress,
+              exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
+              secret,
+              hashLock,
+              created: new Date().toISOString(),
+              status: 'mock_escrow_created',
+              contractType: 'MOCK_1INCH_ESCROW_FACTORY'
+            };
+            
+            activeOrders.set(orderId, orderData);
+            
+            return res.json({
+              success: true,
+              orderId,
+              orderData,
+              message: '🧪 MOCK: ETH→XLM escrow created',
+              nextStep: 'Mock: User MetaMask transaction',
+              instructions: [
+                '🧪 MOCK MODE: No real transactions',
+                '1. Mock 1inch EscrowFactory createDstEscrow called',
+                '2. Mock safety deposit and escrow creation',
+                '3. Mock Stellar HTLC creation for XLM delivery'
+              ],
+              ethereum: {
+                contractAddress: getEscrowFactoryAddress('mainnet'),
+                method: 'createDstEscrow',
+                amount: amount + ' ETH',
+                hashLock
+              },
+              stellar: {
+                htlcId: `mock-stellar-htlc-${Date.now()}`,
+                amount: (parseFloat(amount) * (exchangeRate || ETH_TO_XLM_RATE)).toString() + ' XLM',
+                hashLock
+              }
+            });
+          }
           
           // amount is already a string like "0.00012", convert to wei
           const userAmountWei = ethers.parseEther(amount);
@@ -508,11 +591,16 @@ async function initializeRelayer() {
             hashLock: hashLock
           });
           
-          // Calculate safety deposit (minimum required by 1inch escrow factory)
-          const safetyDepositPercentage = 2; // 2% safety deposit
-          const safetyDeposit = userAmountWei * BigInt(safetyDepositPercentage) / BigInt(100);
-          const MIN_SAFETY_DEPOSIT = ethers.parseEther('0.001'); // 0.001 ETH minimum
-          const actualSafetyDeposit = safetyDeposit > MIN_SAFETY_DEPOSIT ? safetyDeposit : MIN_SAFETY_DEPOSIT;
+          // Calculate dynamic safety deposit
+          const actualSafetyDeposit = calculateDynamicSafetyDeposit(userAmountWei);
+          
+          const amountInEth = parseFloat(ethers.formatEther(userAmountWei));
+          const amountInUsd = amountInEth * 3500;
+          const safetyDepositInEth = parseFloat(ethers.formatEther(actualSafetyDeposit));
+          
+          console.log(`💰 Dynamic Safety Deposit:
+          📊 Amount: ${amountInEth} ETH (~$${amountInUsd.toFixed(2)})
+          🛡️ Safety Deposit: ${safetyDepositInEth} ETH (~$${(safetyDepositInEth * 3500).toFixed(2)})`);
           
           console.log('💰 Safety deposit:', ethers.formatEther(actualSafetyDeposit), 'ETH');
           
@@ -603,9 +691,9 @@ async function initializeRelayer() {
             ],
             safetyDeposit: ethers.formatEther(actualSafetyDeposit.toString()),
             totalCost: ethers.formatEther(totalCost.toString()),
-            contractType: 'ONEINCH_DEPLOYSRC_MAINNET',
+            contractType: 'ONEINCH_ESCROW_FACTORY_MAINNET',
             contractAddress: useHTLC ? getHtlcBridgeAddress('mainnet') : getEscrowFactoryAddress('mainnet'),
-            note: '✅ MENTOR\'UN İSTEDİĞİ deploySrc pattern - 1inch cross-chain resolver!'
+            note: '✅ 1inch EscrowFactory createDstEscrow - Resmi cross-chain pattern!'
           });
           return;
         }
@@ -647,12 +735,9 @@ async function initializeRelayer() {
         console.log('✅ TESTNET ETH→XLM Order created:', orderId);
         console.log('🏭 TESTNET ESKİ ESCROW MODE: User → createEscrow (bizim custom contract)');
         
-        // Calculate dynamic safety deposit (minimum 1% of amount, minimum 0.001 ETH)
-        // orderData.amount is already in wei (string), convert to BigInt directly
+        // Calculate dynamic safety deposit based on USD value
         const orderAmountBigInt = BigInt(orderData.amount);
-        const dynamicSafetyDeposit = orderAmountBigInt / BigInt(100); // 1% of amount
-        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH minimum
-        const actualSafetyDeposit = dynamicSafetyDeposit > MIN_SAFETY_DEPOSIT ? dynamicSafetyDeposit : MIN_SAFETY_DEPOSIT;
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount);
         const totalCost = orderAmountBigInt + actualSafetyDeposit;
         
         // Create EscrowConfig struct (ESKİ testnet yapısı)
@@ -700,34 +785,166 @@ async function initializeRelayer() {
         });
         
       } else if (direction === 'xlm_to_eth') {
-        // For XLM to ETH direction, create order on Stellar first
+        // XLM→ETH: Create HTLC on both Stellar and Ethereum (MainnetHTLC)
+
+        console.log('🌟 XLM→ETH: Creating dual HTLC setup...');
         
         // Use real-time exchange rate for conversion
         const realExchangeRate = exchangeRate || ETH_TO_XLM_RATE;
+        const xlmAmount = parseFloat(amount);
+        const ethAmount = xlmAmount / realExchangeRate;
         
-        const orderData = {
-          orderId,
-          stellarAmount: (parseFloat(amount) * 1e7).toString(), // XLM has 7 decimals
-          targetAmount: (parseFloat(amount) / realExchangeRate * 1e18).toString(), // Convert to ETH using real rate
-          ethAddress,
-          stellarAddress,
-          exchangeRate: realExchangeRate, // Store real-time rate
-          created: new Date().toISOString(),
-          status: 'pending_stellar_transaction'
-        };
+        // Generate HTLC parameters
+        const secret = ethers.hexlify(ethers.randomBytes(32));
+        const hashLock = ethers.keccak256(secret).substring(2); // Remove 0x prefix for Stellar
         
-        // Store order
-        activeOrders.set(orderId, orderData);
-
-        console.log('✅ XLM→ETH Order created:', orderId);
-        
-        res.json({
-          success: true,
-          orderId,
-          orderData,
-          message: 'Bridge order created successfully',
-          nextStep: 'Please confirm the Stellar transaction in Freighter'
+        console.log('🔑 Generated HTLC parameters for XLM→ETH:', {
+          secret: secret.substring(0, 12) + '...',
+          hashLock
         });
+
+        if (RELAYER_CONFIG.enableMockMode) {
+          console.log('🧪 MOCK MODE: Simulating XLM→ETH HTLC creation...');
+          
+          const orderData = {
+            orderId,
+            direction: 'xlm_to_eth',
+            stellarAmount: (xlmAmount * 1e7).toString(),
+            ethAmount: (ethAmount * 1e18).toString(),
+            ethAddress,
+            stellarAddress,
+            exchangeRate: realExchangeRate,
+            secret,
+            hashLock,
+            created: new Date().toISOString(),
+            status: 'mock_htlc_created',
+            contractType: 'MOCK_DUAL_HTLC'
+          };
+          
+          activeOrders.set(orderId, orderData);
+          
+          return res.json({
+            success: true,
+            orderId,
+            orderData,
+            message: '🧪 MOCK: XLM→ETH HTLCs created',
+            nextStep: 'Mock: User deposits XLM to Stellar HTLC',
+            instructions: [
+              '🧪 MOCK MODE: No real transactions',
+              '1. Mock Stellar HTLC created for XLM lock',
+              '2. Mock MainnetHTLC created for ETH unlock',
+              '3. User would deposit XLM and trigger ETH release'
+            ],
+            stellar: {
+              htlcId: `mock-stellar-htlc-${Date.now()}`,
+              amount: xlmAmount.toString() + ' XLM',
+              hashLock: hashLock // Already without 0x for Stellar
+            },
+            ethereum: {
+              contractAddress: getHtlcBridgeAddress('mainnet'),
+              ethAmount: ethAmount.toFixed(6) + ' ETH',
+              hashLock: '0x' + hashLock // With 0x for Ethereum display
+            }
+          });
+        }
+
+        // REAL MODE: Create ETH HTLC only (User will send XLM directly)
+        try {
+          console.log('🌟 XLM→ETH: Creating MainnetHTLC for ETH side only...');
+          console.log('📝 User will send XLM directly to relayer, no claimable balance needed');
+
+          // 2. Create Ethereum MainnetHTLC
+          console.log('🏭 Creating MainnetHTLC for ETH side...');
+          
+          const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL);
+          const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY!, provider);
+          
+          const mainnetHTLCAddress = getHtlcBridgeAddress('mainnet');
+          const mainnetHTLCContract = new ethers.Contract(mainnetHTLCAddress, [
+            "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress) external payable returns (bytes32 orderId)"
+          ], relayerWallet);
+
+          const ethAmountWei = ethers.parseEther(ethAmount.toString());
+          const timelockEth = Math.floor(Date.now() / 1000) + 7200; // 2 hours
+
+          const ethTx = await mainnetHTLCContract.createOrder(
+            '0x0000000000000000000000000000000000000000', // ETH
+            ethAmountWei,
+            '0x' + hashLock, // Add 0x prefix for Ethereum contract
+            timelockEth,
+            ethAddress, // User gets ETH
+            process.env.RELAYER_ETH_ADDRESS!, // Relayer refund
+            { value: ethAmountWei }
+          );
+
+          console.log('📝 MainnetHTLC TX sent:', ethTx.hash);
+          const ethReceipt = await ethTx.wait();
+          console.log('✅ MainnetHTLC created successfully');
+
+          // Store complete order data (ETH HTLC only)
+          const relayerStellarAddress = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
+          
+          const orderData = {
+            orderId,
+            direction: 'xlm_to_eth',
+            stellarAmount: (xlmAmount * 1e7).toString(),
+            ethAmount: ethAmountWei.toString(),
+            ethAddress,
+            stellarAddress,
+            exchangeRate: realExchangeRate,
+            secret,
+            hashLock,
+            created: new Date().toISOString(),
+            status: 'eth_htlc_created',
+            contractType: 'XLM_TO_ETH_DIRECT',
+            stellar: {
+              paymentAddress: relayerStellarAddress,
+              amount: xlmAmount.toString(),
+              memo: `XLM-ETH-${orderId.substring(0, 8)}`
+            },
+            ethereum: {
+              orderId: ethReceipt.logs[0]?.topics[1], // Extract order ID from logs
+              txHash: ethTx.hash,
+              contractAddress: mainnetHTLCAddress
+            }
+          };
+          
+          activeOrders.set(orderId, orderData);
+
+          res.json({
+            success: true,
+            orderId,
+            orderData,
+            message: '🌉 XLM→ETH: ETH HTLC created, awaiting XLM payment',
+            nextStep: 'Send XLM to relayer address',
+            instructions: [
+              '1. User sends XLM directly to relayer Stellar address',
+              '2. Include memo for order identification',
+              '3. Relayer monitors payment and releases ETH HTLC secret',
+              '4. User claims ETH with revealed secret'
+            ],
+            stellar: {
+              paymentAddress: relayerStellarAddress,
+              amount: xlmAmount.toString() + ' XLM',
+              memo: `XLM-ETH-${orderId.substring(0, 8)}`,
+              paymentInstructions: 'Send XLM to this address with memo'
+            },
+            ethereum: {
+              contractAddress: mainnetHTLCAddress,
+              ethAmount: ethAmount.toFixed(6) + ' ETH',
+              hashLock: '0x' + hashLock, // With 0x prefix for Ethereum
+              claimInstructions: 'Wait for XLM payment, then claim ETH with secret'
+            }
+          });
+
+        } catch (error) {
+          console.error('❌ XLM→ETH HTLC creation failed:', error);
+          res.status(500).json({
+            success: false,
+            error: 'XLM→ETH HTLC creation failed',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
         
       } else {
         throw new Error('Invalid direction specified');
@@ -781,7 +998,7 @@ async function initializeRelayer() {
         console.log('🏭 Processing 1inch Escrow Factory deployment...');
         
         try {
-          // Escrow was deployed when user called deploySrc
+          // Escrow was deployed when user called createDstEscrow
           // Now we need to create corresponding escrow on Stellar
           console.log('🌟 Creating corresponding escrow on Stellar...');
           
@@ -866,7 +1083,9 @@ async function initializeRelayer() {
           if (isNaN(targetAmountNum) || targetAmountNum <= 0) {
             console.log('⚠️ Invalid targetAmount, using fallback calculation');
             // Fallback: use amount and exchange rate
-            targetAmountNum = parseFloat(orderAmount || '0.1') / exchangeRate;
+            // Convert wei to ETH first, then calculate target amount
+        const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
+        targetAmountNum = ethAmountFromWei / exchangeRate;
           }
           
           // EXTREME SAFETY: Max 1 ETH, min 0.000001 ETH
@@ -881,7 +1100,9 @@ async function initializeRelayer() {
           ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
         } else {
           // Convert XLM to ETH using exchange rate - SAFE CONVERSION
-          const ethAmountDecimal = parseFloat(orderAmount || '0.1') / exchangeRate;
+          // Convert wei to ETH first, then calculate eth amount  
+        const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
+        const ethAmountDecimal = ethAmountFromWei / exchangeRate;
           
           // Limit to reasonable ETH amounts (max 10 ETH per transaction)
           const safeEthAmount = Math.min(ethAmountDecimal, 10);
@@ -998,7 +1219,9 @@ async function initializeRelayer() {
 
         // Calculate XLM amount to send using real-time rate from frontend
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
-        const xlmAmount = (parseFloat(orderAmount || '0.001') * exchangeRate).toFixed(7);
+        // Convert wei to ETH first, then calculate XLM amount
+        const ethAmount = parseFloat(ethers.formatEther(orderAmount || '1000000000000000')); // Convert wei to ETH
+        const xlmAmount = (ethAmount * exchangeRate).toFixed(7);
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH');
         
         console.log('🎯 Sending to user address:', userStellarAddress);
@@ -1068,7 +1291,9 @@ async function initializeRelayer() {
         
         // Use real-time rate for mock response too
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE;
-        const xlmAmount = (parseFloat(orderAmount || '0.001') * exchangeRate).toFixed(7);
+        // Convert wei to ETH first, then calculate XLM amount
+        const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '1000000000000000')); // 0.001 ETH default
+        const xlmAmount = (ethAmountFromWei * exchangeRate).toFixed(7);
         
         res.json({
           success: true,
@@ -1175,7 +1400,9 @@ async function initializeRelayer() {
           if (isNaN(targetAmountNum) || targetAmountNum <= 0) {
             console.log('⚠️ Invalid targetAmount, using fallback calculation (2nd endpoint)');
             // Fallback: use amount and exchange rate
-            targetAmountNum = parseFloat(orderAmount) / exchangeRate;
+            // Convert wei to ETH first, then calculate target amount
+            const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
+            targetAmountNum = ethAmountFromWei / exchangeRate;
           }
           
           // EXTREME SAFETY: Max 1 ETH, min 0.000001 ETH
@@ -1190,7 +1417,9 @@ async function initializeRelayer() {
           ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
         } else {
           // Convert XLM to ETH using exchange rate - SAFE CONVERSION
-          const ethAmountDecimal = parseFloat(orderAmount) / exchangeRate;
+          // Convert wei to ETH first, then calculate eth amount
+          const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
+          const ethAmountDecimal = ethAmountFromWei / exchangeRate;
           
           // Limit to reasonable ETH amounts (max 10 ETH per transaction)
           const safeEthAmount = Math.min(ethAmountDecimal, 10);
@@ -1400,12 +1629,9 @@ async function initializeRelayer() {
       try {
         console.log(`🏭 Creating escrow for order ${orderId}...`);
         
-        // Calculate dynamic safety deposit for this escrow too
-        // orderData.amount is already in wei (string), convert to BigInt directly
+        // Calculate dynamic safety deposit for this escrow
         const orderAmountBigInt = BigInt(orderData.amount);
-        const dynamicSafetyDeposit = orderAmountBigInt / BigInt(100); // 1% of amount
-        const MIN_SAFETY_DEPOSIT = BigInt('1000000000000000'); // 0.001 ETH minimum
-        const actualSafetyDeposit = dynamicSafetyDeposit > MIN_SAFETY_DEPOSIT ? dynamicSafetyDeposit : MIN_SAFETY_DEPOSIT;
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount);
         
         const totalValue = orderAmountBigInt + actualSafetyDeposit;
         const contractWithSigner = contract.connect(wallet) as any;
@@ -1415,8 +1641,8 @@ async function initializeRelayer() {
         const isMainnetRequest = DEFAULT_NETWORK_MODE === 'mainnet';
         
         if (isMainnetRequest) {
-          // MAINNET: Use deploySrc (1inch cross-chain resolver pattern)
-          console.log('🏭 MAINNET: Using deploySrc method (1inch pattern)...');
+                  // MAINNET: Use createDstEscrow (1inch cross-chain resolver pattern)
+        console.log('🏭 MAINNET: Using createDstEscrow method (1inch pattern)...');
           
           // Generate order hash
           const orderHash = orderData.orderHash || ethers.keccak256(
@@ -1426,11 +1652,11 @@ async function initializeRelayer() {
             )
           );
           
-          // Prepare deploySrc parameters according to 1inch pattern
+          // Prepare createDstEscrow parameters according to 1inch pattern
           const srcChainId = 1; // Ethereum mainnet
           const dstChainId = 1; // Stellar (using 1 as placeholder)
           
-          // Create order structure for 1inch deploySrc
+          // Create order structure for 1inch createDstEscrow
           const order = {
             maker: orderData.ethAddress,
             taker: '0x0000000000000000000000000000000000000000', // Zero address
@@ -1442,7 +1668,7 @@ async function initializeRelayer() {
             extension: orderData.hashLock
           };
           
-          // Create empty signature for deploySrc (will be filled by user)
+          // Create empty signature for createDstEscrow (will be filled by user)
           const signature = '0x';
           
           // Create taker traits
@@ -1452,16 +1678,16 @@ async function initializeRelayer() {
             timelock: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60))
           };
           
-          // Call deploySrc method
-          console.log('🚀 Calling deploySrc with parameters:', {
+                  // Call createDstEscrow method
+        console.log('🚀 Calling createDstEscrow with parameters:', {
             srcChainId,
             orderHash: orderHash.substring(0, 10) + '...',
             makingAmount: ethers.formatEther(order.makingAmount),
             safetyDeposit: ethers.formatEther(actualSafetyDeposit)
           });
           
-          // Use deploySrc method
-          tx = await contractWithSigner.deploySrc(
+          // Use createDstEscrow method
+          tx = await contractWithSigner.createDstEscrow(
             order,
             signature,
             takerTraits,
@@ -1702,7 +1928,7 @@ async function initializeRelayer() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════════════
-  // 1INCH ESCROW FACTORY ENDPOINTS - Using deploySrc approach
+            // 1INCH ESCROW FACTORY ENDPOINTS - Using createDstEscrow approach
   // ═══════════════════════════════════════════════════════════════════════════════════════
 
   // Get escrow factory information
@@ -1715,7 +1941,7 @@ async function initializeRelayer() {
       res.json({
         success: true,
         escrowFactory: escrowFactoryAddress,
-        method: 'deploySrc',
+                    method: 'createDstEscrow',
         note: 'Using 1inch cross-chain resolver pattern'
       });
       
@@ -2583,6 +2809,8 @@ app.post('/presets/optimize', async (req, res) => {
       });
     }
   });
+
+
 
 
 

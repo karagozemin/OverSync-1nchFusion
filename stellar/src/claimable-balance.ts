@@ -4,7 +4,8 @@
  */
 
 import crypto from 'crypto';
-import { keccak256 } from 'js-sha3';
+import pkg from 'js-sha3';
+const { keccak256 } = pkg;
 import {
   Keypair,
   Asset,
@@ -120,20 +121,17 @@ export class StellarHTLCManager {
       // Convert hashLock to proper format for PreAuthTx
       const hashLockBuffer = Buffer.from(params.hashLock.replace('0x', ''), 'hex');
       
+      // SIMPLIFIED for debugging - just unconditional claimants
       const claimants = [
-        // Recipient can claim with correct secret (hash condition + timelock)
+        // Recipient can claim unconditionally (temporary for debugging)
         new Claimant(
           params.recipientPublicKey,  
-          Claimant.predicateAnd(
-            Claimant.predicateBeforeRelativeTime(params.timelock.toString()),
-            // TODO: PreAuthTx hash condition will be added when secret is revealed
-            Claimant.predicateUnconditional() // Temporary - needs proper hash condition
-          )
+          Claimant.predicateUnconditional()
         ),
-        // Source can reclaim after timelock expires (fallback)  
+        // Source can also reclaim unconditionally (temporary for debugging)  
         new Claimant(
           sourceKeypair.publicKey(),
-          Claimant.predicateAfterRelativeTime(params.timelock.toString()) // After timelock expires
+          Claimant.predicateUnconditional()
         )
       ];
 
@@ -165,6 +163,13 @@ export class StellarHTLCManager {
 
       // Submit transaction
       console.log('📡 Submitting transaction to Stellar network...');
+      console.log('🔍 Transaction XDR:', transaction.toXDR());
+      console.log('🔍 Transaction details:', {
+        operations: transaction.operations.length,
+        memo: transaction.memo,
+        fee: transaction.fee,
+        source: transaction.source
+      });
       const response = await this.server.submitTransaction(transaction);
       
       console.log(`✅ HTLC Claimable Balance created successfully!`);
@@ -180,6 +185,19 @@ export class StellarHTLCManager {
       };
     } catch (error) {
       console.error('❌ Failed to create HTLC claimable balance:', error);
+      
+      // Detailed Stellar error logging
+      if (error && typeof error === 'object' && 'response' in error) {
+        const stellarError = error as any;
+        console.error('🔍 Stellar API Error Details:', {
+          status: stellarError.response?.status,
+          statusText: stellarError.response?.statusText,
+          data: stellarError.response?.data,
+          extras: stellarError.response?.data?.extras,
+          detail: stellarError.response?.data?.detail
+        });
+      }
+      
       throw new Error(`Claimable balance creation failed: ${error instanceof Error ? error.message : error}`);
     }
   }

@@ -246,7 +246,7 @@ export class OrdersService {
       taker: order.order.receiver,
       token: order.order.makerAsset,
       amount: order.order.makingAmount,
-      safetyDeposit: "1000000000000000",
+      safetyDeposit: order.order.makingAmount, // Use dynamic calculation in main relayer
       timelocks: "0x"
     };
 

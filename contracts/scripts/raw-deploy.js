@@ -17,7 +17,7 @@ async function main() {
   console.log("💰 Balance:", ethers.formatEther(balance), "ETH");
   
   // Read contract artifacts
-  const artifactPath = path.join(__dirname, '../artifacts/contracts/HTLCBridge.sol/HTLCBridge.json');
+  const artifactPath = path.join(__dirname, '../artifacts/contracts/MainnetHTLC.sol/MainnetHTLC.json');
   const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
   
   console.log("📋 Contract artifact loaded");
