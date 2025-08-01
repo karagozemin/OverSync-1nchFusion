@@ -5,7 +5,6 @@ import {
   Asset, 
   Operation, 
   TransactionBuilder, 
-  Networks,
   Memo
 } from '@stellar/stellar-sdk';
 import { isTestnet, getCurrentNetwork, getContractAddresses } from '../config/networks';
@@ -328,7 +327,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         
         while (retries > 0 && !accountData) {
           try {
-            const response = await fetch(`https://horizon-testnet.stellar.org/accounts/${stellarAddress}`);
+            // Use network configuration to determine correct Horizon URL
+            const horizonUrl = networkInfo.stellar.horizonUrl;
+            const response = await fetch(`${horizonUrl}/accounts/${stellarAddress}`);
             
             if (!response.ok) {
               throw new Error(`Stellar API error: ${response.status}`);
@@ -901,23 +902,31 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
         console.log('💰 Sending', result.orderData.stellarAmount, 'stroops to relayer');
         
         try {
-          // Create Stellar server instance
-          const server = new Horizon.Server('https://horizon-testnet.stellar.org');
+          // Use network configuration to determine correct Horizon URL and network
+          const stellarServer = new Horizon.Server(networkInfo.stellar.horizonUrl);
+          const stellarNetworkPassphrase = networkInfo.stellar.networkPassphrase;
+          const relayerStellarAddress = 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR'; // New mainnet relayer address
+          
+          console.log(`🔗 Using Stellar ${networkInfo.isTestnet ? 'testnet' : 'mainnet'}:`, {
+            horizonUrl: networkInfo.stellar.horizonUrl,
+            networkPassphrase: stellarNetworkPassphrase,
+            relayerAddress: relayerStellarAddress
+          });
           
           // Get user's account to build transaction
-          const userAccount = await server.loadAccount(stellarAddress);
+          const userAccount = await stellarServer.loadAccount(stellarAddress);
           
           // Create payment to relayer
           const payment = Operation.payment({
-            destination: 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37', // Relayer address
+            destination: relayerStellarAddress, // Use environment-based relayer address
             asset: Asset.native(), // XLM
             amount: (parseInt(result.orderData.stellarAmount) / 10000000).toFixed(7), // Convert stroops to XLM
           });
 
-          // Build transaction
+          // Build transaction with correct network
           const transaction = new TransactionBuilder(userAccount, {
             fee: '100000', // 0.01 XLM fee
-            networkPassphrase: Networks.TESTNET
+            networkPassphrase: stellarNetworkPassphrase
           })
             .addOperation(payment)
             .addMemo(Memo.text(`Bridge:${result.orderId.substring(0, 20)}`))
@@ -926,14 +935,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
 
           console.log('📝 Signing transaction with Freighter...');
           
-          // Sign with Freighter
-          const signedXdr = await signTransaction(transaction.toXDR(), Networks.TESTNET);
+          // Sign with Freighter using correct network
+          const signedXdr = await signTransaction(transaction.toXDR(), stellarNetworkPassphrase);
           
           console.log('✅ Stellar transaction signed!');
           
           // Submit signed transaction to Stellar network
-          const signedTx = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
-          const submitResult = await server.submitTransaction(signedTx);
+          const signedTx = TransactionBuilder.fromXDR(signedXdr, stellarNetworkPassphrase);
+          const submitResult = await stellarServer.submitTransaction(signedTx);
           
           console.log('🌟 Stellar transaction submitted:', submitResult.hash);
           

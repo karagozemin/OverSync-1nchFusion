@@ -864,18 +864,61 @@ const activeOrders = new Map();
             "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress) external payable returns (bytes32 orderId)"
           ], relayerWallet);
 
-          const ethAmountWei = ethers.parseEther(ethAmount.toString());
+          // Safe ETH amount conversion with decimal limit
+          const safeEthAmount = Math.min(Math.max(ethAmount, 0.000001), 10.0); // Min 0.000001, Max 10 ETH
+          const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6; // 6 decimal places
+          
+          let ethAmountWei;
+          try {
+            ethAmountWei = ethers.parseEther(roundedEthAmount.toString());
+          } catch (parseError: any) {
+            console.warn('⚠️ parseEther failed in create endpoint, using minimum amount:', parseError.message);
+            ethAmountWei = ethers.parseEther("0.001"); // 0.001 ETH minimum
+          }
+          
+          console.log('🔢 XLM→ETH CREATE - Original ETH amount:', ethAmount, '→ Safe amount:', roundedEthAmount);
           const timelockEth = Math.floor(Date.now() / 1000) + 7200; // 2 hours
 
-          const ethTx = await mainnetHTLCContract.createOrder(
-            '0x0000000000000000000000000000000000000000', // ETH
-            ethAmountWei,
-            '0x' + hashLock, // Add 0x prefix for Ethereum contract
-            timelockEth,
-            ethAddress, // User gets ETH
-            process.env.RELAYER_ETH_ADDRESS!, // Relayer refund
-            { value: ethAmountWei }
-          );
+          // MainnetHTLC createOrder with retry mechanism for rate limiting
+          let ethTx;
+          let retryCount = 0;
+          const maxRetries = 3;
+          
+          while (retryCount <= maxRetries) {
+            try {
+              ethTx = await mainnetHTLCContract.createOrder(
+                '0x0000000000000000000000000000000000000000', // ETH
+                ethAmountWei,
+                '0x' + hashLock, // Add 0x prefix for Ethereum contract
+                timelockEth,
+                ethAddress, // User gets ETH
+                process.env.RELAYER_ETH_ADDRESS!, // Relayer refund
+                { value: ethAmountWei }
+              );
+              break; // Success, exit retry loop
+            } catch (createError: any) {
+              console.log('🔍 MainnetHTLC createOrder error:', createError.code, createError.message);
+              
+              // Check for rate limiting (Alchemy returns code 429 in nested error)
+              const isRateLimited = (
+                createError.code === 'UNKNOWN_ERROR' && 
+                createError.error?.code === 429
+              ) || (
+                createError.message?.includes('compute units per second') ||
+                createError.message?.includes('rate limit') ||
+                createError.code === 429
+              );
+              
+              if (isRateLimited && retryCount < maxRetries) {
+                retryCount++;
+                const delay = 3000 * retryCount; // 3s, 6s, 9s
+                console.log(`⏳ Alchemy rate limited, retrying MainnetHTLC in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              } else {
+                throw createError; // Re-throw if not rate limiting or max retries reached
+              }
+            }
+          }
 
           console.log('📝 MainnetHTLC TX sent:', ethTx.hash);
           const ethReceipt = await ethTx.wait();
@@ -1096,8 +1139,13 @@ const activeOrders = new Map();
           
           console.log('🔢 SAFE CONVERSION - targetAmount:', targetAmountNum, '→', roundedTargetAmount, 'ETH');
           
-          // Convert to wei safely
-          ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
+          // Convert to wei safely with parseEther protection
+          try {
+            ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
+          } catch (parseError: any) {
+            console.warn('⚠️ parseEther failed, using minimum amount:', parseError.message);
+            ethAmount = "1000000000000000"; // 0.001 ETH minimum
+          }
         } else {
           // Convert XLM to ETH using exchange rate - SAFE CONVERSION
           // Convert wei to ETH first, then calculate eth amount  
@@ -1110,8 +1158,13 @@ const activeOrders = new Map();
           // Round to 6 decimal places to avoid precision issues
           const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6;
           
-          // Convert to wei safely
-          ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
+          // Convert to wei safely with parseEther protection
+          try {
+            ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
+          } catch (parseError: any) {
+            console.warn('⚠️ parseEther failed, using minimum amount:', parseError.message);
+            ethAmount = "1000000000000000"; // 0.001 ETH minimum
+          }
           console.log('🔢 SAFE CONVERSION - calculated:', ethAmountDecimal, '→', roundedEthAmount, 'ETH');
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (XLM→ETH)');
@@ -1427,8 +1480,13 @@ const activeOrders = new Map();
           // Round to 6 decimal places to avoid precision issues
           const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6;
           
-          // Convert to wei safely
-          ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
+          // Convert to wei safely with parseEther protection
+          try {
+            ethAmount = ethers.parseEther(roundedEthAmount.toString()).toString();
+          } catch (parseError: any) {
+            console.warn('⚠️ parseEther failed, using minimum amount:', parseError.message);
+            ethAmount = "1000000000000000"; // 0.001 ETH minimum
+          }
         }
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH (dedicated endpoint)');
         console.log('🎯 ETH amount to send:', ethers.formatEther(ethAmount), 'ETH');

@@ -8,6 +8,7 @@ export interface NetworkConfig {
   displayName: string;
   rpcUrl: string;
   explorerUrl: string;
+  escrowFactory?: string;
   nativeCurrency: {
     name: string;
     symbol: string;
@@ -46,6 +47,7 @@ export const ETHEREUM_NETWORKS: Record<string, NetworkConfig> = {
     displayName: 'Sepolia Testnet',
     rpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE',
     explorerUrl: 'https://sepolia.etherscan.io',
+    escrowFactory: '0x3f344ACDd17a0c4D21096da895152820f595dc8A', // Testnet HTLC Bridge
     nativeCurrency: {
       name: 'Sepolia Ether',
       symbol: 'SEP',
