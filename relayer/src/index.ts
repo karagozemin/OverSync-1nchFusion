@@ -151,9 +151,38 @@ import RecoveryService, { RecoveryConfig, RecoveryType, RecoveryStatus } from '.
 import { getMonitor } from './monitoring.js';
 
 // Contract addresses
-const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
+const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM (LEGACY - now using real-time prices)
 // Network-aware contract addresses  
 const HTLC_CONTRACT_ADDRESS = getHtlcBridgeAddress(); // Dynamic: testnet/mainnet
+
+// Real-time price fetching function
+async function getRealTimePrices(): Promise<{xlmUsdPrice: number, ethUsdPrice: number, ethToXlmRate: number}> {
+  let xlmUsdPrice = 0.12; // Default fallback
+  let ethUsdPrice = 3500;  // Default fallback
+  
+  try {
+    // Try to get real-time prices from CoinGecko API
+    const priceResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=stellar,ethereum&vs_currencies=usd');
+    if (priceResponse.ok) {
+      const priceData = await priceResponse.json() as any;
+      xlmUsdPrice = priceData.stellar?.usd || 0.12;
+      ethUsdPrice = priceData.ethereum?.usd || 3500;
+      console.log('📊 Real-time prices fetched from CoinGecko:', { xlmUsdPrice, ethUsdPrice });
+    } else {
+      console.warn('⚠️ CoinGecko API failed, using fallback prices');
+    }
+  } catch (priceError) {
+    console.warn('⚠️ Price fetch failed, using fallback prices:', priceError.message);
+  }
+  
+  const ethToXlmRate = ethUsdPrice / xlmUsdPrice; // 1 ETH = ? XLM
+  
+  return {
+    xlmUsdPrice,
+    ethUsdPrice,
+    ethToXlmRate
+  };
+}
 
 // Dynamic contract address getters
 function getEscrowFactoryAddress(networkMode?: string): string {
@@ -570,32 +599,50 @@ const activeOrders = new Map();
               },
               stellar: {
                 htlcId: `mock-stellar-htlc-${Date.now()}`,
-                amount: (parseFloat(amount) * (exchangeRate || ETH_TO_XLM_RATE)).toString() + ' XLM',
+                amount: (parseFloat(amount) * ETH_TO_XLM_RATE).toFixed(7) + ' XLM', // Mock mode uses legacy rate
                 hashLock
               }
             });
           }
           
-          // amount is already a string like "0.00012", convert to wei
-          const userAmountWei = ethers.parseEther(amount);
-          console.log(`💰 User Amount: ${amount} ETH = ${userAmountWei.toString()} wei`);
-          
-          // Generate HTLC parameters for cross-chain bridge
-          const secretBytes = new Uint8Array(32);
-          crypto.getRandomValues(secretBytes);
-          const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-          const hashLock = ethers.keccak256(secret);
-          
-          console.log('🔑 Generated HTLC parameters:', {
-            secret: secret.substring(0, 10) + '...',
-            hashLock: hashLock
-          });
-          
-          // Calculate dynamic safety deposit
-          const actualSafetyDeposit = calculateDynamicSafetyDeposit(userAmountWei);
-          
-          const amountInEth = parseFloat(ethers.formatEther(userAmountWei));
-          const amountInUsd = amountInEth * 3500;
+          // Get REAL-TIME exchange rates from market for ETH→XLM
+        const realTimePrices = await getRealTimePrices();
+        const { xlmUsdPrice, ethUsdPrice, ethToXlmRate } = realTimePrices;
+
+        // amount is already a string like "0.00012", convert to wei
+        const userAmountWei = ethers.parseEther(amount);
+        console.log(`💰 User Amount: ${amount} ETH = ${userAmountWei.toString()} wei`);
+        
+        // Calculate real XLM amount from ETH using market prices
+        const ethAmount = parseFloat(amount);
+        const realMarketXlmAmount = (ethAmount * ethUsdPrice) / xlmUsdPrice;
+        
+        console.log('💱 REAL MARKET ETH→XLM Exchange:', {
+          ethAmount,
+          ethUsdPrice: `$${ethUsdPrice}`,
+          xlmUsdPrice: `$${xlmUsdPrice}`,
+          realMarketRate: `1 ETH = ${realMarketXlmAmount.toFixed(2)} XLM`,
+          ethTotalValue: `$${(ethAmount * ethUsdPrice).toFixed(4)}`,
+          xlmAmount: `${realMarketXlmAmount.toFixed(7)} XLM`,
+          xlmTotalValue: `$${(realMarketXlmAmount * xlmUsdPrice).toFixed(4)}`
+        });
+        
+        // Generate HTLC parameters for cross-chain bridge
+        const secretBytes = new Uint8Array(32);
+        crypto.getRandomValues(secretBytes);
+        const secret = `0x${Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        const hashLock = ethers.keccak256(secret);
+        
+        console.log('🔑 Generated HTLC parameters:', {
+          secret: secret.substring(0, 10) + '...',
+          hashLock: hashLock
+        });
+        
+        // Calculate dynamic safety deposit
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(userAmountWei);
+        
+        const amountInEth = parseFloat(ethers.formatEther(userAmountWei));
+        const amountInUsd = amountInEth * ethUsdPrice; // Use real ETH price
           const safetyDepositInEth = parseFloat(ethers.formatEther(actualSafetyDeposit));
           
           console.log(`💰 Dynamic Safety Deposit:
@@ -622,7 +669,7 @@ const activeOrders = new Map();
             stellarAddress,
             amount: userAmountWei.toString(),
             safetyDeposit: actualSafetyDeposit.toString(),
-            exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
+            exchangeRate: ethToXlmRate, // Use real-time rate
             contractType: 'ONEINCH_ESCROW_FACTORY_MAINNET_DST',
             status: 'pending_dst_escrow_deployment',
             network: 'ethereum',
@@ -789,10 +836,25 @@ const activeOrders = new Map();
 
         console.log('🌟 XLM→ETH: Creating dual HTLC setup...');
         
-        // Use real-time exchange rate for conversion
-        const realExchangeRate = exchangeRate || ETH_TO_XLM_RATE;
+        // Get REAL-TIME exchange rates from market
+        const realTimePrices = await getRealTimePrices();
+        const { xlmUsdPrice, ethUsdPrice, ethToXlmRate } = realTimePrices;
+        
         const xlmAmount = parseFloat(amount);
-        const ethAmount = xlmAmount / realExchangeRate;
+        
+        // Calculate REAL market rate: XLM USD value / ETH USD value
+        const realMarketRate = xlmUsdPrice / ethUsdPrice;
+        const ethAmount = xlmAmount * realMarketRate;
+        
+        console.log('💱 REAL MARKET XLM→ETH Exchange:', {
+          xlmAmount,
+          xlmUsdPrice: `$${xlmUsdPrice}`,
+          ethUsdPrice: `$${ethUsdPrice}`,
+          realMarketRate: `1 XLM = ${realMarketRate.toFixed(8)} ETH`,
+          xlmTotalValue: `$${(xlmAmount * xlmUsdPrice).toFixed(4)}`,
+          ethAmount: `${ethAmount.toFixed(8)} ETH`,
+          ethTotalValue: `$${(ethAmount * ethUsdPrice).toFixed(4)}`
+        });
         
         // Generate HTLC parameters
         const secret = ethers.hexlify(ethers.randomBytes(32));
@@ -813,7 +875,7 @@ const activeOrders = new Map();
             ethAmount: (ethAmount * 1e18).toString(),
             ethAddress,
             stellarAddress,
-            exchangeRate: realExchangeRate,
+            exchangeRate: ethToXlmRate,
             secret,
             hashLock,
             created: new Date().toISOString(),
@@ -848,146 +910,66 @@ const activeOrders = new Map();
           });
         }
 
-        // REAL MODE: Create ETH HTLC only (User will send XLM directly)
+        // FIXED: Create pending order ONLY - NO ETH HTLC YET!
+        console.log('🌟 XLM→ETH: Creating pending order (awaiting XLM payment)...');
+        console.log('📝 User will send XLM first, then relayer will create ETH HTLC');
+
+        // Safe ETH amount conversion with decimal limit
+        const safeEthAmount = Math.min(Math.max(ethAmount, 0.000001), 10.0); // Min 0.000001, Max 10 ETH
+        const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6; // 6 decimal places
+        
+        let ethAmountWei;
         try {
-          console.log('🌟 XLM→ETH: Creating MainnetHTLC for ETH side only...');
-          console.log('📝 User will send XLM directly to relayer, no claimable balance needed');
-
-          // 2. Create Ethereum MainnetHTLC
-          console.log('🏭 Creating MainnetHTLC for ETH side...');
-          
-          const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL);
-          const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY!, provider);
-          
-          const mainnetHTLCAddress = getHtlcBridgeAddress('mainnet');
-          const mainnetHTLCContract = new ethers.Contract(mainnetHTLCAddress, [
-            "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress) external payable returns (bytes32 orderId)"
-          ], relayerWallet);
-
-          // Safe ETH amount conversion with decimal limit
-          const safeEthAmount = Math.min(Math.max(ethAmount, 0.000001), 10.0); // Min 0.000001, Max 10 ETH
-          const roundedEthAmount = Math.round(safeEthAmount * 1e6) / 1e6; // 6 decimal places
-          
-          let ethAmountWei;
-          try {
-            ethAmountWei = ethers.parseEther(roundedEthAmount.toString());
-          } catch (parseError: any) {
-            console.warn('⚠️ parseEther failed in create endpoint, using minimum amount:', parseError.message);
-            ethAmountWei = ethers.parseEther("0.001"); // 0.001 ETH minimum
-          }
-          
-          console.log('🔢 XLM→ETH CREATE - Original ETH amount:', ethAmount, '→ Safe amount:', roundedEthAmount);
-          const timelockEth = Math.floor(Date.now() / 1000) + 7200; // 2 hours
-
-          // MainnetHTLC createOrder with retry mechanism for rate limiting
-          let ethTx;
-          let retryCount = 0;
-          const maxRetries = 3;
-          
-          while (retryCount <= maxRetries) {
-            try {
-              ethTx = await mainnetHTLCContract.createOrder(
-                '0x0000000000000000000000000000000000000000', // ETH
-                ethAmountWei,
-                '0x' + hashLock, // Add 0x prefix for Ethereum contract
-                timelockEth,
-                ethAddress, // User gets ETH
-                process.env.RELAYER_ETH_ADDRESS!, // Relayer refund
-                { value: ethAmountWei }
-              );
-              break; // Success, exit retry loop
-            } catch (createError: any) {
-              console.log('🔍 MainnetHTLC createOrder error:', createError.code, createError.message);
-              
-              // Check for rate limiting (Alchemy returns code 429 in nested error)
-              const isRateLimited = (
-                createError.code === 'UNKNOWN_ERROR' && 
-                createError.error?.code === 429
-              ) || (
-                createError.message?.includes('compute units per second') ||
-                createError.message?.includes('rate limit') ||
-                createError.code === 429
-              );
-              
-              if (isRateLimited && retryCount < maxRetries) {
-                retryCount++;
-                const delay = 3000 * retryCount; // 3s, 6s, 9s
-                console.log(`⏳ Alchemy rate limited, retrying MainnetHTLC in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              } else {
-                throw createError; // Re-throw if not rate limiting or max retries reached
-              }
-            }
-          }
-
-          console.log('📝 MainnetHTLC TX sent:', ethTx.hash);
-          const ethReceipt = await ethTx.wait();
-          console.log('✅ MainnetHTLC created successfully');
-
-          // Store complete order data (ETH HTLC only)
-          const relayerStellarAddress = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
-          
-          const orderData = {
-            orderId,
-            direction: 'xlm_to_eth',
-            stellarAmount: (xlmAmount * 1e7).toString(),
-            ethAmount: ethAmountWei.toString(),
-            ethAddress,
-            stellarAddress,
-            exchangeRate: realExchangeRate,
-            secret,
-            hashLock,
-            created: new Date().toISOString(),
-            status: 'eth_htlc_created',
-            contractType: 'XLM_TO_ETH_DIRECT',
-            stellar: {
-              paymentAddress: relayerStellarAddress,
-              amount: xlmAmount.toString(),
-              memo: `XLM-ETH-${orderId.substring(0, 8)}`
-            },
-            ethereum: {
-              orderId: ethReceipt.logs[0]?.topics[1], // Extract order ID from logs
-              txHash: ethTx.hash,
-              contractAddress: mainnetHTLCAddress
-            }
-          };
-          
-          activeOrders.set(orderId, orderData);
-
-          res.json({
-            success: true,
-            orderId,
-            orderData,
-            message: '🌉 XLM→ETH: ETH HTLC created, awaiting XLM payment',
-            nextStep: 'Send XLM to relayer address',
-            instructions: [
-              '1. User sends XLM directly to relayer Stellar address',
-              '2. Include memo for order identification',
-              '3. Relayer monitors payment and releases ETH HTLC secret',
-              '4. User claims ETH with revealed secret'
-            ],
-            stellar: {
-              paymentAddress: relayerStellarAddress,
-              amount: xlmAmount.toString() + ' XLM',
-              memo: `XLM-ETH-${orderId.substring(0, 8)}`,
-              paymentInstructions: 'Send XLM to this address with memo'
-            },
-            ethereum: {
-              contractAddress: mainnetHTLCAddress,
-              ethAmount: ethAmount.toFixed(6) + ' ETH',
-              hashLock: '0x' + hashLock, // With 0x prefix for Ethereum
-              claimInstructions: 'Wait for XLM payment, then claim ETH with secret'
-            }
-          });
-
-        } catch (error) {
-          console.error('❌ XLM→ETH HTLC creation failed:', error);
-          res.status(500).json({
-            success: false,
-            error: 'XLM→ETH HTLC creation failed',
-            details: error instanceof Error ? error.message : 'Unknown error'
-          });
+          ethAmountWei = ethers.parseEther(roundedEthAmount.toString());
+        } catch (parseError: any) {
+          console.warn('⚠️ parseEther failed in create endpoint, using minimum amount:', parseError.message);
+          ethAmountWei = ethers.parseEther("0.001"); // 0.001 ETH minimum
         }
+        
+        console.log('🔢 XLM→ETH PENDING - ETH amount will be:', roundedEthAmount, 'ETH');
+
+        // Store pending order data (NO ETH HTLC YET!)
+        const relayerStellarAddress = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
+        
+        const orderData = {
+          orderId,
+          direction: 'xlm_to_eth',
+          stellarAmount: (xlmAmount * 1e7).toString(),
+          ethAmount: ethAmountWei.toString(),
+          ethAddress,
+          stellarAddress,
+          exchangeRate: ethToXlmRate,
+          secret,
+          hashLock,
+          created: new Date().toISOString(),
+          status: 'awaiting_xlm_payment', // PENDING STATUS
+          contractType: 'XLM_TO_ETH_PENDING',
+          stellar: {
+            paymentAddress: relayerStellarAddress,
+            amount: xlmAmount.toString(),
+            memo: `XLM-ETH-${orderId.substring(0, 8)}`
+          },
+          ethereum: {
+            pendingAmount: ethAmountWei.toString(),
+            beneficiary: ethAddress
+          }
+        };
+        
+        activeOrders.set(orderId, orderData);
+
+        res.json({
+          success: true,
+          orderId,
+          message: '⏳ XLM→ETH: Order created - Please send XLM to complete swap',
+          orderData: {
+            stellarAmount: (xlmAmount * 1e7).toString(),
+            stellarAddress: relayerStellarAddress,
+            memo: `XLM-ETH-${orderId.substring(0, 8)}`,
+            expectedEthAmount: ethAmountWei.toString(),
+            status: 'awaiting_xlm_payment',
+            instructions: `Send ${xlmAmount} XLM to ${relayerStellarAddress} with memo: XLM-ETH-${orderId.substring(0, 8)}`
+          }
+        });
         
       } else {
         throw new Error('Invalid direction specified');
@@ -1681,6 +1663,194 @@ const activeOrders = new Map();
         console.error('❌ Error monitoring transfers:', error);
       }
     }, RELAYER_CONFIG.pollInterval); // Use configurable poll interval (15s default)
+    
+    // XLM Payment Monitoring for XLM→ETH orders
+    console.log('🌟 Starting Stellar payment monitoring...');
+    let lastProcessedStellarLedger = 0;
+    
+    setInterval(async () => {
+      try {
+        console.log('🔍 Checking for XLM payments to relayer...');
+        
+        const networkMode = RELAYER_CONFIG.ethereum.network === 'mainnet' ? 'mainnet' : 'testnet';
+        const stellarConfig = NETWORK_CONFIG[networkMode].stellar;
+        const { Horizon } = await import('@stellar/stellar-sdk');
+        const server = new Horizon.Server(stellarConfig.horizonUrl);
+        
+        const relayerStellarPublic = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
+        
+        // Get current ledger
+        const ledgerResponse = await server.ledgers().order('desc').limit(1).call();
+        const currentLedger = parseInt(ledgerResponse.records[0].sequence.toString());
+        
+        if (lastProcessedStellarLedger === 0) {
+          lastProcessedStellarLedger = currentLedger - 10; // Start from 10 ledgers ago
+          console.log('🌟 Stellar monitoring initialized, starting from ledger:', lastProcessedStellarLedger);
+          return;
+        }
+        
+        // Check payments to relayer since last processed ledger
+        const paymentsResponse = await server.payments()
+          .forAccount(relayerStellarPublic)
+          .cursor((lastProcessedStellarLedger * 4294967296).toString()) // Convert ledger to cursor
+          .order('asc')
+          .limit(50)
+          .call();
+        
+        for (const payment of paymentsResponse.records) {
+          if (payment.type === 'payment' && payment.asset_type === 'native' && payment.to === relayerStellarPublic) {
+            console.log('💰 XLM payment detected:', {
+              from: payment.from,
+              amount: payment.amount,
+              txHash: payment.transaction_hash
+            });
+            
+            // Get transaction details to extract memo
+            const txResponse = await server.transactions().transaction(payment.transaction_hash).call();
+            const memo = txResponse.memo;
+            
+            if (memo && memo.startsWith('XLM-ETH-')) {
+              const orderPrefix = memo.replace('XLM-ETH-', '');
+              console.log('🔍 Found XLM→ETH payment with memo:', memo, 'Order prefix:', orderPrefix);
+              
+              // Find matching pending order
+              for (const [orderId, orderData] of activeOrders.entries()) {
+                if (orderId.includes(orderPrefix) && orderData.status === 'awaiting_xlm_payment') {
+                  console.log('✅ Matched XLM payment to order:', orderId);
+                  
+                  // Verify payment amount matches expected
+                  const expectedXLM = parseFloat(orderData.stellar.amount);
+                  const receivedXLM = parseFloat(payment.amount);
+                  
+                  if (Math.abs(receivedXLM - expectedXLM) < 0.001) { // 0.001 XLM tolerance
+                    console.log('💰 XLM amount verified:', receivedXLM, '≈', expectedXLM);
+                    
+                    // Create ETH HTLC now that XLM is received
+                    await createETHHTLCForOrder(orderData, orderId);
+                  } else {
+                    console.warn('⚠️ XLM amount mismatch:', receivedXLM, 'vs expected:', expectedXLM);
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        lastProcessedStellarLedger = currentLedger;
+        
+      } catch (stellarError) {
+        console.error('❌ Stellar monitoring error:', stellarError);
+      }
+    }, 15000); // Check every 15 seconds
+    
+    // Function to create ETH HTLC after XLM payment received
+    async function createETHHTLCForOrder(orderData: any, orderId: string) {
+      console.log('🏭 Creating ETH HTLC for verified XLM payment:', orderId);
+      
+      try {
+        const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL);
+        const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY!, provider);
+        
+        // Check relayer balance first
+        const relayerBalance = await provider.getBalance(relayerWallet.address);
+        console.log('💰 Relayer ETH balance:', ethers.formatEther(relayerBalance), 'ETH');
+        
+        const mainnetHTLCAddress = getHtlcBridgeAddress('mainnet');
+        const mainnetHTLCContract = new ethers.Contract(mainnetHTLCAddress, [
+          "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, address beneficiary, address refundAddress) external payable returns (bytes32 orderId)"
+        ], relayerWallet);
+
+        const ethAmountWei = BigInt(orderData.ethAmount);
+        const timelockEth = Math.floor(Date.now() / 1000) + 7200; // 2 hours
+        
+        console.log('🔢 DETAILED ETH HTLC DEBUG:', {
+          orderData_ethAmount: orderData.ethAmount,
+          ethAmountWei_string: ethAmountWei.toString(),
+          ethAmountWei_formatted: ethers.formatEther(ethAmountWei),
+          beneficiary: orderData.ethAddress,
+          hashLock: orderData.hashLock,
+          relayerAddress: relayerWallet.address,
+          relayerBalance_ETH: ethers.formatEther(relayerBalance),
+          contractAddress: mainnetHTLCAddress
+        });
+
+        // Check for insufficient balance
+        const estimatedGasCost = ethers.parseEther("0.002"); // ~0.002 ETH for gas
+        const totalRequired = ethAmountWei + estimatedGasCost;
+        
+        console.log('💰 Balance Check:', {
+          required_ETH: ethers.formatEther(ethAmountWei),
+          gas_estimate_ETH: ethers.formatEther(estimatedGasCost),
+          total_required_ETH: ethers.formatEther(totalRequired),
+          relayer_balance_ETH: ethers.formatEther(relayerBalance),
+          has_sufficient_balance: relayerBalance >= totalRequired
+        });
+        
+        if (relayerBalance < totalRequired) {
+          throw new Error(`❌ Insufficient relayer balance! Need ${ethers.formatEther(totalRequired)} ETH, have ${ethers.formatEther(relayerBalance)} ETH`);
+        }
+
+        // Create ETH HTLC with retry mechanism
+        let ethTx;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount <= maxRetries) {
+          try {
+            ethTx = await mainnetHTLCContract.createOrder(
+              '0x0000000000000000000000000000000000000000', // ETH
+              ethAmountWei,
+              '0x' + orderData.hashLock, // Add 0x prefix for Ethereum contract
+              timelockEth,
+              orderData.ethAddress, // User gets ETH
+              process.env.RELAYER_ETH_ADDRESS!, // Relayer refund
+              { value: ethAmountWei }
+            );
+            break; // Success, exit retry loop
+          } catch (createError: any) {
+            console.log('🔍 ETH HTLC createOrder error:', createError.code, createError.message);
+            
+            // Check for rate limiting
+            const isRateLimited = (
+              createError.code === 'UNKNOWN_ERROR' && 
+              createError.error?.code === 429
+            ) || (
+              createError.message?.includes('compute units per second') ||
+              createError.message?.includes('rate limit') ||
+              createError.code === 429
+            );
+            
+            if (isRateLimited && retryCount < maxRetries) {
+              retryCount++;
+              const delay = 3000 * retryCount; // 3s, 6s, 9s
+              console.log(`⏳ Alchemy rate limited, retrying ETH HTLC in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw createError; // Re-throw if not rate limiting or max retries reached
+            }
+          }
+        }
+
+        console.log('📝 ETH HTLC TX sent:', ethTx.hash);
+        const ethReceipt = await ethTx.wait();
+        console.log('✅ ETH HTLC created successfully for order:', orderId);
+
+        // Update order status
+        orderData.status = 'eth_htlc_created';
+        orderData.ethereum = {
+          orderId: ethReceipt.logs[0]?.topics[1],
+          txHash: ethTx.hash,
+          contractAddress: mainnetHTLCAddress
+        };
+        
+        console.log('🎉 XLM→ETH swap ready! User can now claim ETH with secret:', orderData.secret.substring(0, 10) + '...');
+        
+      } catch (error) {
+        console.error('❌ ETH HTLC creation failed for order:', orderId, error);
+        orderData.status = 'eth_htlc_failed';
+      }
+    }
     
     // Function to create escrow for order
     async function createEscrowForOrder(orderData: any, orderId: string, contract: ethers.Contract, wallet: ethers.Wallet) {

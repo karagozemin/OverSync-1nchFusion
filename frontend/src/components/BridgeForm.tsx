@@ -905,31 +905,40 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           // Use network configuration to determine correct Horizon URL and network
           const stellarServer = new Horizon.Server(networkInfo.stellar.horizonUrl);
           const stellarNetworkPassphrase = networkInfo.stellar.networkPassphrase;
-          const relayerStellarAddress = 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR'; // New mainnet relayer address
+          const relayerStellarAddress = result.orderData.stellarAddress; // Use relayer provided address
           
           console.log(`🔗 Using Stellar ${networkInfo.isTestnet ? 'testnet' : 'mainnet'}:`, {
             horizonUrl: networkInfo.stellar.horizonUrl,
             networkPassphrase: stellarNetworkPassphrase,
-            relayerAddress: relayerStellarAddress
+            relayerAddress: relayerStellarAddress,
+            memo: result.orderData.memo
           });
           
           // Get user's account to build transaction
           const userAccount = await stellarServer.loadAccount(stellarAddress);
           
-          // Create payment to relayer
+          // Create payment to relayer using exact amounts from relayer
+          const xlmAmount = (parseInt(result.orderData.stellarAmount) / 10000000).toFixed(7); // Convert stroops to XLM
           const payment = Operation.payment({
-            destination: relayerStellarAddress, // Use environment-based relayer address
+            destination: relayerStellarAddress,
             asset: Asset.native(), // XLM
-            amount: (parseInt(result.orderData.stellarAmount) / 10000000).toFixed(7), // Convert stroops to XLM
+            amount: xlmAmount
+          });
+          
+          console.log('💰 Payment details:', {
+            destination: relayerStellarAddress,
+            amount: xlmAmount + ' XLM',
+            stroops: result.orderData.stellarAmount,
+            memo: result.orderData.memo
           });
 
           // Build transaction with correct network
           const transaction = new TransactionBuilder(userAccount, {
-            fee: '100000', // 0.01 XLM fee
+            fee: '100', // Normal Stellar fee (100 stroops)
             networkPassphrase: stellarNetworkPassphrase
           })
             .addOperation(payment)
-            .addMemo(Memo.text(`Bridge:${result.orderId.substring(0, 20)}`))
+            .addMemo(Memo.text(result.orderData.memo)) // Use exact memo from relayer
             .setTimeout(300)
             .build();
 
