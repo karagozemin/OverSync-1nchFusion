@@ -46,13 +46,13 @@ Mentorunuzun önerdiği şekilde **deploySrc** metodunu kullanıyoruz:
 NETWORK_MODE=mainnet
 
 # 1inch API Key (hala gerekli bazı endpoint'ler için)
-ONEINCH_API_KEY=57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN
+ONEINCH_API_KEY=your_1inch_api_key_here
 
 # Stellar
-RELAYER_STELLAR_SECRET=SATRXKDQQ2MMST5V57CX52P6OPDLGUFWQD5FYRD75N2UXCIHWH6ETIYG
+RELAYER_STELLAR_SECRET=your_stellar_secret_key_here
 
-# Ethereum
-RELAYER_PRIVATE_KEY=0xf38c811b61dc42e9b2dfa664d2ae2302c4958b5ff6ab607186b70e76e86802a6
+# Ethereum  
+RELAYER_PRIVATE_KEY=your_ethereum_private_key_here
 ```
 
 ## 🎯 Contract Adresleri:

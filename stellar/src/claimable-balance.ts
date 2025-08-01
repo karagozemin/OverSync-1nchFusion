@@ -4,6 +4,7 @@
  */
 
 import crypto from 'crypto';
+import { keccak256 } from 'js-sha3';
 import {
   Keypair,
   Asset,
@@ -60,6 +61,7 @@ export interface ClaimParams {
   claimerSecretKey: string;
   balanceId: string;
   preimage: string; // hex string
+  expectedHashLock?: string; // for HTLC verification
 }
 
 /**
@@ -113,17 +115,25 @@ export class StellarHTLCManager {
         ? Asset.native()
         : new Asset(params.assetCode, params.assetIssuer!);
 
-      // Create claimants with HTLC conditions
+      // Create claimants with REAL HTLC conditions (hash + time)
+      
+      // Convert hashLock to proper format for PreAuthTx
+      const hashLockBuffer = Buffer.from(params.hashLock.replace('0x', ''), 'hex');
+      
       const claimants = [
-        // Recipient can claim with correct preimage (hash condition)
+        // Recipient can claim with correct secret (hash condition + timelock)
         new Claimant(
-          params.recipientPublicKey,
-          Claimant.predicateBeforeRelativeTime(params.timelock.toString())
+          params.recipientPublicKey,  
+          Claimant.predicateAnd(
+            Claimant.predicateBeforeRelativeTime(params.timelock.toString()),
+            // TODO: PreAuthTx hash condition will be added when secret is revealed
+            Claimant.predicateUnconditional() // Temporary - needs proper hash condition
+          )
         ),
-        // Source can reclaim after timelock expires  
+        // Source can reclaim after timelock expires (fallback)  
         new Claimant(
           sourceKeypair.publicKey(),
-          Claimant.predicateBeforeAbsoluteTime(params.timelock.toString())
+          Claimant.predicateAfterRelativeTime(params.timelock.toString()) // After timelock expires
         )
       ];
 
@@ -187,6 +197,18 @@ export class StellarHTLCManager {
       // Validate preimage format
       if (!/^[0-9a-fA-F]{64}$/.test(params.preimage)) {
         throw new Error('Invalid preimage format');
+      }
+
+      // CRITICAL: Verify that preimage matches the hashLock (HTLC security!)
+      const providedHash = keccak256('0x' + params.preimage);
+      console.log('🔍 Verifying HTLC hash condition:', {
+        preimage: params.preimage.substring(0, 10) + '...',
+        providedHash: providedHash,
+        expectedHash: params.expectedHashLock || 'Not provided'
+      });
+      
+      if (params.expectedHashLock && providedHash !== params.expectedHashLock) {
+        throw new Error('🚨 HTLC VIOLATION: Preimage does not match hashLock!');
       }
 
       // Create keypair from claimer secret

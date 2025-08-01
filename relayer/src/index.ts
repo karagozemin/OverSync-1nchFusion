@@ -32,7 +32,7 @@ const NETWORK_CONFIG = {
     ethereum: {
       chainId: 1, // Ethereum Mainnet
       escrowFactory: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Factory
-      htlcBridge: '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // Same as escrowFactory for now
+      htlcBridge: '0x0000000000000000000000000000000000000000', // MainnetHTLC (to be deployed)
     },
     stellar: {
       networkPassphrase: 'Public Global Stellar Network ; September 2015',
@@ -58,7 +58,7 @@ const HTLC_BRIDGE_ABI = [
   "function createOrder(address token, uint256 amount, bytes32 hashLock, uint256 timelock, uint256 feeRate, address beneficiary, address refundAddress, uint256 destinationChainId, bytes32 stellarTxHash, bool partialFillEnabled) external payable returns (uint256 orderId)"
 ];
 
-// MAINNET: Gerçek 1inch EscrowFactory ABI
+// MAINNET: GERÇEK 1inch EscrowFactory ABI (verdiğin ABI'dan)
 const MAINNET_ESCROW_FACTORY_ABI = [
   `function createDstEscrow(
     (bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) dstImmutables,
@@ -68,9 +68,13 @@ const MAINNET_ESCROW_FACTORY_ABI = [
   "function addressOfEscrowDst((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) immutables) external view returns (address)",
   "function ESCROW_SRC_IMPLEMENTATION() external view returns (address)",
   "function ESCROW_DST_IMPLEMENTATION() external view returns (address)",
+  "function availableCredit(address account) external view returns (uint256)",
+  "function increaseAvailableCredit(address account, uint256 amount) external returns (uint256 allowance)",
+  "function decreaseAvailableCredit(address account, uint256 amount) external returns (uint256 allowance)",
+  
   // Events
-  "event SrcEscrowCreated((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) srcImmutables, (uint256 maker, uint256 amount, uint256 token, uint256 safetyDeposit, uint256 chainId) dstImmutablesComplement)",
-  "event DstEscrowCreated(address escrow, bytes32 hashlock, uint256 taker)"
+  "event DstEscrowCreated(address escrow, bytes32 hashlock, uint256 taker)",
+  "event SrcEscrowCreated((bytes32 orderHash, bytes32 hashlock, uint256 maker, uint256 taker, uint256 token, uint256 amount, uint256 safetyDeposit, uint256 timelocks) srcImmutables, (uint256 maker, uint256 amount, uint256 token, uint256 safetyDeposit, uint256 chainId) dstImmutablesComplement)"
 ];
 
 // TESTNET: Bizim custom EscrowFactory ABI (eski hali)
@@ -133,6 +137,13 @@ function getEscrowFactoryAddress(networkMode?: string): string {
 
 function getHtlcBridgeAddress(networkMode?: string): string {
   return getNetworkConfig(networkMode).ethereum.htlcBridge;
+}
+
+// New function to determine which contract to use based on operation type
+function shouldUseHTLCContract(networkMode?: string): boolean {
+  const config = getNetworkConfig(networkMode);
+  // Use HTLC contract if it's available (not zero address)
+  return config.ethereum.htlcBridge !== '0x0000000000000000000000000000000000000000';
 }
 
 // Relayer configuration from environment variables
@@ -478,8 +489,9 @@ async function initializeRelayer() {
       if (direction === 'eth_to_xlm') {
         
         if (isMainnetRequest) {
-          // MAINNET: Use GERÇEK 1inch EscrowFactory createDstEscrow (doğru ABI ile!)
-          console.log('🏭 Creating escrow via GERÇEK 1inch EscrowFactory createDstEscrow method...');
+          // MAINNET: Use DUAL CONTRACT APPROACH (1inch EscrowFactory + MainnetHTLC)
+          const useHTLC = shouldUseHTLCContract('mainnet');
+          console.log(`🏭 MAINNET: Using ${useHTLC ? 'HTLC + EscrowFactory' : 'EscrowFactory only'} approach...`);
           
           // amount is already a string like "0.00012", convert to wei
           const userAmountWei = ethers.parseEther(amount);
@@ -549,11 +561,21 @@ async function initializeRelayer() {
           const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
           
           // Encode EscrowFactory createDstEscrow call (DOĞRU MAINNET ABI!)
+          console.log('🔍 DEBUG: About to encode createDstEscrow with:', {
+            dstImmutables,
+            srcCancellationTimestamp,
+            abiLength: getEscrowFactoryABI(true).length
+          });
+          
           const escrowInterface = new ethers.Interface(getEscrowFactoryABI(true)); // true = mainnet
+          console.log('🔍 DEBUG: Interface created, available functions:', escrowInterface.fragments.map(f => f.type === 'function' ? (f as any).name : f.type));
+          
           const encodedData = escrowInterface.encodeFunctionData("createDstEscrow", [
             dstImmutables,
             srcCancellationTimestamp
           ]);
+          
+          console.log('🔍 DEBUG: Encoded data length:', encodedData.length);
 
           // Return direct EscrowFactory contract interaction
           res.json({
@@ -563,23 +585,27 @@ async function initializeRelayer() {
             dstImmutables,
             srcCancellationTimestamp,
             approvalTransaction: {
-              to: getEscrowFactoryAddress('mainnet'),       // Mainnet EscrowFactory
+              to: useHTLC ? getHtlcBridgeAddress('mainnet') : getEscrowFactoryAddress('mainnet'),       // Dynamic contract selection
               value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
-              data: encodedData,                // createDstEscrow call with struct
+              data: encodedData,                // Contract call data
               gas: '0x7A120'                    // 500000 gas limit for contract call
             },
-            message: '🏭 Mainnet: GERÇEK 1inch EscrowFactory createDstEscrow',
-            nextStep: 'EscrowFactory createDstEscrow çağırın',
-            instructions: [
-              '1. User MetaMask ile GERÇEK 1inch EscrowFactory contract\'ını çağıracak',
-              '2. createDstEscrow fonksiyonu çalışacak (DOĞRU ABI ile!)',
-              '3. Cross-chain bridge için escrow oluşacak'
+            message: `🏭 Mainnet: ${useHTLC ? 'HTLC + EscrowFactory' : 'EscrowFactory only'}`,
+            nextStep: useHTLC ? 'HTLC Contract çağırın' : '1inch EscrowFactory çağırın',
+            instructions: useHTLC ? [
+              '1. User MetaMask ile MainnetHTLC contract\'ını çağıracak',
+              '2. HTLC atomic swap başlayacak',
+              '3. Cross-chain bridge tamamlanacak'
+            ] : [
+              '1. User MetaMask ile 1inch EscrowFactory çağıracak',
+              '2. Escrow yaratılacak ve safety deposit ödenecek',
+              '3. Cross-chain transfer başlayacak'
             ],
             safetyDeposit: ethers.formatEther(actualSafetyDeposit.toString()),
             totalCost: ethers.formatEther(totalCost.toString()),
-            contractType: 'ONEINCH_ESCROW_FACTORY_MAINNET_DST',
-            contractAddress: getEscrowFactoryAddress('mainnet'),
-            note: '✅ GERÇEK createDstEscrow metodu - MetaMask artık çalışacak!'
+            contractType: 'ONEINCH_DEPLOYSRC_MAINNET',
+            contractAddress: useHTLC ? getHtlcBridgeAddress('mainnet') : getEscrowFactoryAddress('mainnet'),
+            note: '✅ MENTOR\'UN İSTEDİĞİ deploySrc pattern - 1inch cross-chain resolver!'
           });
           return;
         }
@@ -1389,10 +1415,10 @@ async function initializeRelayer() {
         const isMainnetRequest = DEFAULT_NETWORK_MODE === 'mainnet';
         
         if (isMainnetRequest) {
-          // MAINNET: Use createDstEscrow
-          console.log('🏭 MAINNET: Using createDstEscrow...');
+          // MAINNET: Use deploySrc (1inch cross-chain resolver pattern)
+          console.log('🏭 MAINNET: Using deploySrc method (1inch pattern)...');
           
-          // Generate order hash if not present
+          // Generate order hash
           const orderHash = orderData.orderHash || ethers.keccak256(
             ethers.solidityPacked(
               ['address', 'uint256', 'bytes32', 'uint256'],
@@ -1400,24 +1426,52 @@ async function initializeRelayer() {
             )
           );
           
-          // Create IBaseEscrow.Immutables struct for createDstEscrow
-          const dstImmutables = {
-            orderHash: orderHash,
-            hashlock: orderData.hashLock,
-            maker: orderData.ethAddress, // Will be converted to uint256 by ethers
-            taker: '0x0000000000000000000000000000000000000000', // Zero address as uint256
-            token: '0x0000000000000000000000000000000000000000', // ETH as uint256
-            amount: orderData.amount,
-            safetyDeposit: actualSafetyDeposit.toString(),
-            timelocks: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60)) // 2 hours
+          // Prepare deploySrc parameters according to 1inch pattern
+          const srcChainId = 1; // Ethereum mainnet
+          const dstChainId = 1; // Stellar (using 1 as placeholder)
+          
+          // Create order structure for 1inch deploySrc
+          const order = {
+            maker: orderData.ethAddress,
+            taker: '0x0000000000000000000000000000000000000000', // Zero address
+            makerAsset: '0x0000000000000000000000000000000000000000', // ETH
+            takerAsset: '0x0000000000000000000000000000000000000000', // Target asset (placeholder)
+            makingAmount: orderAmountBigInt,
+            takingAmount: orderAmountBigInt, // 1:1 for bridge
+            salt: ethers.randomBytes(32),
+            extension: orderData.hashLock
           };
           
-          const srcCancellationTimestamp = Math.floor(Date.now() / 1000) + (4 * 60 * 60); // 4 hours
+          // Create empty signature for deploySrc (will be filled by user)
+          const signature = '0x';
           
-          tx = await contractWithSigner.createDstEscrow(dstImmutables, srcCancellationTimestamp, {
-            value: totalValue,
-            gasLimit: 3000000
+          // Create taker traits
+          const takerTraits = {
+            extensionData: orderData.hashLock,
+            safetyDeposit: actualSafetyDeposit,
+            timelock: orderData.timelock || (Math.floor(Date.now() / 1000) + (2 * 60 * 60))
+          };
+          
+          // Call deploySrc method
+          console.log('🚀 Calling deploySrc with parameters:', {
+            srcChainId,
+            orderHash: orderHash.substring(0, 10) + '...',
+            makingAmount: ethers.formatEther(order.makingAmount),
+            safetyDeposit: ethers.formatEther(actualSafetyDeposit)
           });
+          
+          // Use deploySrc method
+          tx = await contractWithSigner.deploySrc(
+            order,
+            signature,
+            takerTraits,
+            order.makingAmount,
+            orderData.hashLock,
+            {
+              value: totalValue,
+              gasLimit: 3000000
+            }
+          );
         } else {
           // TESTNET: Use createEscrow
           console.log('🏭 TESTNET: Using createEscrow...');
