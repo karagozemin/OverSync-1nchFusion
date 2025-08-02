@@ -19,10 +19,22 @@ export function useFreighter() {
   // Check if Freighter is connected on mount
   useEffect(() => {
     const checkConnection = async () => {
+      console.log('🚀 Checking Freighter connection...');
+      
       try {
+        // Check if Freighter is available
+        if (!freighterApi || typeof freighterApi.isConnected !== 'function') {
+          console.log('❌ Freighter API not available');
+          return;
+        }
+        
         const isConnected = await freighterApi.isConnected();
+        console.log('🚀 Freighter connection status:', isConnected);
+        
         if (isConnected) {
           const { address } = await freighterApi.getAddress();
+          console.log('🚀 Freighter address:', address);
+          
           setState(prev => ({
             ...prev,
             isConnected: true,
@@ -31,7 +43,7 @@ export function useFreighter() {
           }));
         }
       } catch (error) {
-        console.error('Error checking Freighter connection:', error);
+        console.error('❌ Error checking Freighter connection:', error);
         setState(prev => ({
           ...prev,
           error: error instanceof Error ? error.message : 'Connection check failed',
@@ -44,16 +56,28 @@ export function useFreighter() {
 
   // Connect to Freighter
   const connect = useCallback(async () => {
+    console.log('🚀 Connecting to Freighter...');
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
+      // Check if Freighter is available
+      if (!freighterApi || typeof freighterApi.isConnected !== 'function') {
+        throw new Error('Freighter wallet extension bulunamadı. Lütfen Freighter extension\'ı yükleyin.');
+      }
+      
       const isAvailable = await freighterApi.isConnected();
+      console.log('🚀 Freighter availability:', isAvailable);
+      
       if (!isAvailable) {
         throw new Error('Freighter wallet is not available. Please install Freighter extension.');
       }
 
+      console.log('🚀 Requesting Freighter permission...');
       await freighterApi.setAllowed();
+      
+      console.log('🚀 Getting Freighter address...');
       const { address } = await freighterApi.getAddress();
+      console.log('🚀 Freighter connected successfully:', address);
       
       setState(prev => ({
         ...prev,
@@ -65,6 +89,7 @@ export function useFreighter() {
 
       return address;
     } catch (error) {
+      console.error('❌ Freighter connection error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to Freighter';
       setState(prev => ({
         ...prev,

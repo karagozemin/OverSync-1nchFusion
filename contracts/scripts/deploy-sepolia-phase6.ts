@@ -23,16 +23,16 @@ async function main() {
   console.log(`   Network: ${(await ethers.provider.getNetwork()).name}`);
   console.log(`   Chain ID: ${(await ethers.provider.getNetwork()).chainId}`);
   
-  if (balance < ethers.parseEther("0.1")) {
-    throw new Error("Insufficient balance for deployment. Need at least 0.1 ETH.");
+  if (balance < ethers.parseEther("0.001")) {
+    throw new Error("Insufficient balance for deployment. Need at least 0.001 ETH.");
   }
   
   // Deploy HTLCBridge
   console.log("\n🔨 Deploying HTLCBridge to Sepolia...");
   const HTLCBridge: ContractFactory = await ethers.getContractFactory("HTLCBridge");
   const htlcBridge: Contract = await HTLCBridge.deploy({
-    gasLimit: 5000000,
-    gasPrice: ethers.parseUnits("20", "gwei")
+    gasLimit: 3000000,
+    gasPrice: ethers.parseUnits("5", "gwei")
   });
   
   console.log("   ⏳ Waiting for deployment...");
@@ -49,8 +49,8 @@ async function main() {
   console.log("\n🔨 Deploying EscrowFactory to Sepolia...");
   const EscrowFactory: ContractFactory = await ethers.getContractFactory("EscrowFactory");
   const escrowFactory: Contract = await EscrowFactory.deploy({
-    gasLimit: 5000000,
-    gasPrice: ethers.parseUnits("20", "gwei")
+    gasLimit: 6000000, // Double the gas limit
+    gasPrice: ethers.parseUnits("10", "gwei") // Increase gas price
   });
   
   console.log("   ⏳ Waiting for deployment...");
@@ -71,8 +71,8 @@ async function main() {
     "FTEST",
     ethers.parseEther("1000000"),
     {
-      gasLimit: 2000000,
-      gasPrice: ethers.parseUnits("20", "gwei")
+      gasLimit: 1000000,
+      gasPrice: ethers.parseUnits("5", "gwei")
     }
   );
   
@@ -93,21 +93,21 @@ async function main() {
   console.log("   📝 Authorizing deployer as resolver...");
   await htlcBridge.authorizeResolver(deployer.address, {
     gasLimit: 100000,
-    gasPrice: ethers.parseUnits("20", "gwei")
+    gasPrice: ethers.parseUnits("5", "gwei")
   });
   
   // Authorize escrow factory
   console.log("   📝 Authorizing escrow factory...");
-  await htlcBridge.authorizeFactory(escrowFactoryAddress, {
+    await htlcBridge.authorizeFactory(escrowFactoryAddress, {
     gasLimit: 100000,
-    gasPrice: ethers.parseUnits("20", "gwei")
+    gasPrice: ethers.parseUnits("5", "gwei")
   });
-  
+
   // Configure factory
   console.log("   📝 Configuring factory...");
   await escrowFactory.authorizeResolver(deployer.address, {
     gasLimit: 100000,
-    gasPrice: ethers.parseUnits("20", "gwei")
+    gasPrice: ethers.parseUnits("5", "gwei")
   });
   
   // Wait for configuration confirmations

@@ -39,11 +39,8 @@ body {
 
 body {
   min-height: 100vh;
-  /* Dark blue/black background similar to 1inch */
-  background-color: #0d111c;
-  background-image: 
-    radial-gradient(circle at 15% 15%, rgba(45, 0, 109, 0.1) 0%, transparent 35%),
-    radial-gradient(circle at 85% 85%, rgba(131, 35, 239, 0.1) 0%, transparent 35%);
+  /* Updated background with soft purple-blue-pink gradient */
+  background: radial-gradient(ellipse at center, #1A1E2E 0%, #151A28 50%);
   background-attachment: fixed;
   background-size: cover;
 }
@@ -69,7 +66,7 @@ input[type=number] {
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
 }
 
-/* Flowing border effect */
+/* Updated flowing border effect with new colors */
 .flowing-border {
   position: relative;
   border-radius: 16px;
@@ -77,7 +74,7 @@ input[type=number] {
   box-shadow: 
     0 8px 24px rgba(0, 0, 0, 0.5),
     0 4px 8px rgba(0, 0, 0, 0.3),
-    0 0 40px rgba(31, 38, 135, 0.2) inset;
+    0 0 40px rgba(108, 99, 255, 0.15) inset;
   transition: all 0.3s ease;
 }
 
@@ -85,7 +82,7 @@ input[type=number] {
   box-shadow: 
     0 12px 32px rgba(0, 0, 0, 0.6),
     0 8px 16px rgba(0, 0, 0, 0.4),
-    0 0 50px rgba(31, 38, 135, 0.3) inset;
+    0 0 50px rgba(108, 99, 255, 0.25) inset;
   filter: brightness(1.05);
 }
 
@@ -97,10 +94,10 @@ input[type=number] {
   padding: 2px;
   background: linear-gradient(
     300deg,
-    #4f46e5,
-    #8b5cf6,
-    #c026d3,
-    #4f46e5
+    #6C63FF,
+    #3ABEFF,
+    #FF9AF0,
+    #6C63FF
   );
   background-size: 300% 300%;
   animation: border-flow 8s linear infinite;
@@ -147,6 +144,7 @@ input[type=number] {
   }
 }
 
+/* Updated gradient border with new colors */
 .gradient-border {
   position: relative;
   border-radius: 16px;
@@ -159,7 +157,7 @@ input[type=number] {
   inset: 0;
   border-radius: 16px;
   padding: 1px;
-  background: linear-gradient(to right, #4f46e5, #8b5cf6, #c026d3);
+  background: linear-gradient(to right, #6C63FF, #3ABEFF);
   -webkit-mask: 
     linear-gradient(#fff 0 0) content-box, 
     linear-gradient(#fff 0 0);
@@ -169,4 +167,67 @@ input[type=number] {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
+}
+
+/* New custom classes for the updated design */
+.page-title-gradient {
+  background: linear-gradient(to right, #6C63FF, #3ABEFF, #FF9AF0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 600;
+}
+
+.swap-card-border {
+  position: relative;
+  border-radius: 1.5rem;
+  box-shadow: 0 0 12px rgba(108, 99, 255, 0.15);
+}
+
+.swap-card-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1.5rem;
+  padding: 1px;
+  background: linear-gradient(90deg, #6C63FF, #3ABEFF);
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.swap-card-bg {
+  background-color: rgba(20, 25, 40, 0.8);
+}
+
+.button-hover-scale:hover {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+/* Network button styles */
+.network-mainnet {
+  background-color: rgba(58, 190, 255, 0.1);
+  color: #3ABEFF;
+}
+
+.network-testnet {
+  background-color: rgba(255, 221, 87, 0.1);
+  color: #FFDD57;
+}
+
+.network-connected {
+  background-color: rgba(108, 99, 255, 0.1);
+  color: #6C63FF;
+}
+
+.network-button-hover:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 9999px;
 } 

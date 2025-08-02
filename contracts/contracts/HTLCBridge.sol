@@ -241,7 +241,7 @@ contract HTLCBridge is ReentrancyGuard, Ownable {
         bool partialFillEnabled
     ) external payable nonReentrant returns (uint256 orderId) {
         // Input validation
-        require(token != address(0), "Invalid token");
+        // Note: token can be address(0) for ETH transactions
         require(amount > 0, "Amount must be > 0");
         require(hashLock != bytes32(0), "Invalid hash lock");
         require(timelock > block.timestamp + MIN_TIMELOCK, "Timelock too early");
@@ -252,7 +252,7 @@ contract HTLCBridge is ReentrancyGuard, Ownable {
         require(msg.value >= MIN_SAFETY_DEPOSIT, "Safety deposit too low");
         require(msg.value <= MAX_SAFETY_DEPOSIT, "Safety deposit too high");
         require(hashLockToOrderId[hashLock] == 0, "Hash lock already used");
-        require(authorizedResolvers[msg.sender] || msg.sender == owner(), "Not authorized");
+        // Authorization check removed - allow all users to create orders
         
         // Generate unique order ID
         orderId = _nextOrderId++;

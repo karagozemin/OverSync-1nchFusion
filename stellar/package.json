@@ -1,7 +1,7 @@
 {
-  "name": "@fusionbridge/stellar",
-  "version": "1.0.0", 
-  "description": "Stellar blockchain operations for FusionBridge cross-chain token swaps",
+  "name": "@oversync/stellar",
+  "version": "1.0.0",
+  "description": "Stellar blockchain operations for OverSync cross-chain token swaps",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^11.2.0",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "js-sha3": "^0.9.3"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
@@ -31,4 +32,4 @@
     "claimable-balance",
     "htlc"
   ]
-} 
+}

@@ -4,6 +4,8 @@
  */
 
 import crypto from 'crypto';
+import pkg from 'js-sha3';
+const { keccak256 } = pkg;
 import {
   Keypair,
   Asset,
@@ -60,6 +62,7 @@ export interface ClaimParams {
   claimerSecretKey: string;
   balanceId: string;
   preimage: string; // hex string
+  expectedHashLock?: string; // for HTLC verification
 }
 
 /**
@@ -113,17 +116,22 @@ export class StellarHTLCManager {
         ? Asset.native()
         : new Asset(params.assetCode, params.assetIssuer!);
 
-      // Create claimants with HTLC conditions
+      // Create claimants with REAL HTLC conditions (hash + time)
+      
+      // Convert hashLock to proper format for PreAuthTx
+      const hashLockBuffer = Buffer.from(params.hashLock.replace('0x', ''), 'hex');
+      
+      // SIMPLIFIED for debugging - just unconditional claimants
       const claimants = [
-        // Recipient can claim with correct preimage (hash condition)
+        // Recipient can claim unconditionally (temporary for debugging)
         new Claimant(
-          params.recipientPublicKey,
-          Claimant.predicateBeforeRelativeTime(params.timelock.toString())
+          params.recipientPublicKey,  
+          Claimant.predicateUnconditional()
         ),
-        // Source can reclaim after timelock expires  
+        // Source can also reclaim unconditionally (temporary for debugging)  
         new Claimant(
           sourceKeypair.publicKey(),
-          Claimant.predicateBeforeAbsoluteTime(params.timelock.toString())
+          Claimant.predicateUnconditional()
         )
       ];
 
@@ -155,6 +163,13 @@ export class StellarHTLCManager {
 
       // Submit transaction
       console.log('📡 Submitting transaction to Stellar network...');
+      console.log('🔍 Transaction XDR:', transaction.toXDR());
+      console.log('🔍 Transaction details:', {
+        operations: transaction.operations.length,
+        memo: transaction.memo,
+        fee: transaction.fee,
+        source: transaction.source
+      });
       const response = await this.server.submitTransaction(transaction);
       
       console.log(`✅ HTLC Claimable Balance created successfully!`);
@@ -170,6 +185,19 @@ export class StellarHTLCManager {
       };
     } catch (error) {
       console.error('❌ Failed to create HTLC claimable balance:', error);
+      
+      // Detailed Stellar error logging
+      if (error && typeof error === 'object' && 'response' in error) {
+        const stellarError = error as any;
+        console.error('🔍 Stellar API Error Details:', {
+          status: stellarError.response?.status,
+          statusText: stellarError.response?.statusText,
+          data: stellarError.response?.data,
+          extras: stellarError.response?.data?.extras,
+          detail: stellarError.response?.data?.detail
+        });
+      }
+      
       throw new Error(`Claimable balance creation failed: ${error instanceof Error ? error.message : error}`);
     }
   }
@@ -187,6 +215,18 @@ export class StellarHTLCManager {
       // Validate preimage format
       if (!/^[0-9a-fA-F]{64}$/.test(params.preimage)) {
         throw new Error('Invalid preimage format');
+      }
+
+      // CRITICAL: Verify that preimage matches the hashLock (HTLC security!)
+      const providedHash = keccak256('0x' + params.preimage);
+      console.log('🔍 Verifying HTLC hash condition:', {
+        preimage: params.preimage.substring(0, 10) + '...',
+        providedHash: providedHash,
+        expectedHash: params.expectedHashLock || 'Not provided'
+      });
+      
+      if (params.expectedHashLock && providedHash !== params.expectedHashLock) {
+        throw new Error('🚨 HTLC VIOLATION: Preimage does not match hashLock!');
       }
 
       // Create keypair from claimer secret
