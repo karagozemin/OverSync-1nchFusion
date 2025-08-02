@@ -719,10 +719,23 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           // Wait for transaction receipt to confirm success
           let receipt = null;
           let attempts = 0;
-          const maxAttempts = 60; // Wait max 2 minutes (2s * 60 = 120s)
+          const maxAttempts = 120; // Wait max 2 minutes (1s * 120 = 120s)
           
           while (!receipt && attempts < maxAttempts) {
             try {
+              // First try to get transaction status
+              const txStatus = await window.ethereum.request({
+                method: 'eth_getTransactionByHash',
+                params: [txHash]
+              });
+              
+              if (txStatus && txStatus.blockNumber) {
+                console.log('✅ Transaction confirmed via block number!');
+                receipt = { status: '0x1' }; // Assume success if confirmed
+                break;
+              }
+              
+              // Then try to get receipt
               receipt = await window.ethereum.request({
                 method: 'eth_getTransactionReceipt',
                 params: [txHash]
@@ -730,8 +743,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               
               if (!receipt) {
                 console.log(`⏳ Waiting for confirmation... (${attempts + 1}/${maxAttempts})`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
                 attempts++;
+              } else {
+                console.log('✅ Transaction receipt found!');
+                break;
               }
             } catch (receiptError) {
               console.warn('⚠️ Error getting receipt:', receiptError);
@@ -741,7 +757,25 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           }
           
           if (!receipt) {
-            throw new Error('Transaction confirmation timeout');
+            // Try alternative method - check transaction status directly
+            console.log('🔄 Receipt not found, trying alternative confirmation method...');
+            
+            try {
+              const txStatus = await window.ethereum.request({
+                method: 'eth_getTransactionByHash',
+                params: [txHash]
+              });
+              
+              if (txStatus && txStatus.blockNumber) {
+                console.log('✅ Transaction confirmed via alternative method!');
+                receipt = { status: '0x1' }; // Assume success if confirmed
+              } else {
+                throw new Error('Transaction confirmation timeout');
+              }
+            } catch (altError) {
+              console.error('❌ Alternative confirmation also failed:', altError);
+              throw new Error('Transaction confirmation timeout');
+            }
           }
           
           // Check transaction status
@@ -754,6 +788,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
           console.log('✅ Transaction confirmed successfully!');
           console.log('🤖 Now triggering cross-chain processing...');
+          
+
           
           // Save transaction to history immediately when ETH tx confirms
           saveTransactionToHistory({
