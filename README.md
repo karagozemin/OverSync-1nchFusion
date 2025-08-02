@@ -10,7 +10,7 @@
 
 🎬 **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=DEMO_VIDEO_LINK)
 
-🌐 **Live App**: [https://oversync.vercel.app](https://oversync.vercel.app)
+🌐 **Live App**: [https://over-sync-1nch-fusion-frontend-bwlq.vercel.app/](https://over-sync-1nch-fusion-frontend-bwlq.vercel.app/)
 
 Built for **ETHGlobal Unite Hackathon** - Extending 1inch Fusion+ to support Stellar blockchain.
 
@@ -95,8 +95,8 @@ oversync/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/oversync.git
-cd oversync
+git clone https://github.com/karagozemin/OverSync-1nchFusion.git
+cd OverSync-1nchFusion
 
 # Setup environment variables
 cp env.example .env
