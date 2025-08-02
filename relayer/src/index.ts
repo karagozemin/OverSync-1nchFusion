@@ -342,6 +342,8 @@ async function initializeRelayer() {
       'http://127.0.0.1:5174',
       'https://over-sync-1nch-fusion-frontend-bwlq-e5cndv6cr.vercel.app',
       'https://over-sync-1nch-fusion-frontend-bwlq-e5cndv6cr.vercel.app/',
+      'https://over-sync-1nch-fusion-frontend-sigma.vercel.app',
+      'https://over-sync-1nch-fusion-frontend-sigma.vercel.app/',
       'https://oversync.vercel.app',
       'https://oversync.vercel.app/'
     ],
