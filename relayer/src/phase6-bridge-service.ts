@@ -28,7 +28,6 @@ interface BridgeOrderState {
   filledAmount: string;
   ethereumTxHash?: string;
   stellarTxHash?: string;
-  // Add other properties as needed
 }
 
 enum BridgeOrderStatus {
