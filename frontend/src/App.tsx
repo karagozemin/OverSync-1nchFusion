@@ -114,7 +114,7 @@ function App() {
 
 
 
-  // MetaMask bağlantısı
+  // MetaMask connection
   const connectMetaMask = async () => {
     console.log('🦊 MetaMask connect clicked!');
     setIsConnecting(true);
@@ -148,7 +148,7 @@ function App() {
     }
   };
 
-  // Freighter bağlantısı - Hook kullanarak
+  // Freighter connection - Using hook
   const handleFreighterConnect = async () => {
     try {
       await connectFreighter();
@@ -169,15 +169,17 @@ function App() {
   const hasAnyConnection = ethAddress || stellarConnected;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900 text-white">
+    <div className="min-h-screen text-white flex flex-col">
       {/* Top Navigation */}
       <nav className="w-full px-6 py-4 flex items-center justify-between border-b border-white/10 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">F</span>
-          </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            FusionBridge
+          <img 
+            src="/images/oversync-logo.png" 
+            alt="OverSync" 
+            className="w-12 h-12 rounded-lg"
+          />
+          <span className="text-xl font-bold bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] bg-clip-text text-transparent">
+            OverSync
           </span>
         </div>
         
@@ -189,14 +191,14 @@ function App() {
           {/* Network Toggle Button */}
           <button
             onClick={toggleNetwork}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 network-button-hover ${
               currentNetwork === 'mainnet'
-                ? 'bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30'
-                : 'bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30'
+                ? 'network-mainnet border border-[#3ABEFF]/30'
+                : 'network-testnet border border-[#FFDD57]/30'
             }`}
           >
             <div className={`w-2 h-2 rounded-full ${
-              currentNetwork === 'mainnet' ? 'bg-green-400' : 'bg-yellow-400'
+              currentNetwork === 'mainnet' ? 'bg-[#3ABEFF]' : 'bg-[#FFDD57]'
             }`}></div>
             {currentNetwork === 'mainnet' ? 'Mainnet' : 'Testnet'}
           </button>
@@ -205,7 +207,7 @@ function App() {
           <div className="relative">
             <button 
               onClick={() => setShowWalletMenu(!showWalletMenu)}
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+              className="bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] hover:from-[#5A52E8] hover:to-[#2A9FE8] text-white px-6 py-2.5 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2 button-hover-scale"
             >
               {isWalletsConnected ? (
                 <>
@@ -333,28 +335,28 @@ function App() {
 
 
       {/* Hero Section */}
-      <div className="text-center py-12 px-6">
-        <h1 className="text-5xl md:text-6xl font-bold mb-6">
-          <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+      <div className="text-center py-8 px-6">
+        <h1 className="text-3xl md:text-4xl font-bold mb-4">
+          <span className="page-title-gradient">
             Cross-chain Swap
           </span>
         </h1>
-        <p className="text-xl text-gray-300 mb-2 max-w-2xl mx-auto">
+        <p className="text-lg text-gray-300 mb-2 max-w-2xl mx-auto">
           Bridge your assets seamlessly between Ethereum and Stellar networks
         </p>
-        <p className="text-sm text-gray-400 mb-12">
+        <p className="text-sm text-gray-400 mb-6">
           Powered by Hash Time Locked Contracts (HTLC) for secure cross-chain transfers
         </p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex justify-center mb-8">
+      <div className="flex justify-center mb-6">
         <div className="flex bg-white/5 backdrop-blur-sm rounded-xl p-1 border border-white/10">
           <button
             onClick={() => setActiveTab('bridge')}
             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
               activeTab === 'bridge'
-                ? 'bg-blue-500 text-white shadow-lg'
+                ? 'bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] text-white shadow-lg'
                 : 'text-gray-300 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -364,7 +366,7 @@ function App() {
             onClick={() => setActiveTab('history')}
             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
               activeTab === 'history'
-                ? 'bg-blue-500 text-white shadow-lg'
+                ? 'bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] text-white shadow-lg'
                 : 'text-gray-300 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -374,16 +376,13 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-col items-center justify-center px-6 pb-12 gap-8">
+      <div className="flex flex-col items-center justify-center px-6 pb-32 gap-4 flex-1">
         {activeTab === 'bridge' && (
-          <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <BridgeForm 
-                ethAddress={ethAddress} 
-                stellarAddress={stellarAddress || ''}
-              />
-            </div>
-
+          <div className="w-full max-w-2xl ml-36">
+            <BridgeForm 
+              ethAddress={ethAddress} 
+              stellarAddress={stellarAddress || ''}
+            />
           </div>
         )}
         
@@ -399,11 +398,23 @@ function App() {
 
       {/* Background Effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#6C63FF]/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Dropdown kapatma için overlay */}
+      {/* Footer Bar */}
+      <div className="w-full h-[28px] bg-[#0b0f1a] flex items-center justify-end px-6">
+        <a 
+          href="https://x.com/OverBlock_" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-white hover:text-[#3ABEFF] transition-colors text-lg font-semibold flex items-center gap-2"
+        >
+          Powered by OverBlock
+          <span className="text-xl">𝕏</span>
+        </a>
+      </div>
+
+      {/* Overlay for closing dropdown */}
       
       {/* Toast Container */}
       <ToastContainer 

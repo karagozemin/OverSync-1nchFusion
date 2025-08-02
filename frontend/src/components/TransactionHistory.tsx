@@ -29,12 +29,17 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
 
   // Mock transaction data for demo
   useEffect(() => {
+    // Check current network to show appropriate mock data
+    const urlParams = new URLSearchParams(window.location.search);
+    const networkParam = urlParams.get('network');
+    const isTestnetMode = networkParam === 'testnet';
+    
     const mockTransactions: Transaction[] = [
       {
         id: '1',
         txHash: '0x1234567890abcdef1234567890abcdef12345678',
-        fromNetwork: 'ETH Sepolia',
-        toNetwork: 'Stellar Testnet',
+        fromNetwork: isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet',
+        toNetwork: isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet',
         fromToken: 'ETH',
         toToken: 'XLM',
         amount: '0.001',
@@ -48,8 +53,8 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
       {
         id: '2', 
         txHash: 'stellar_tx_abcd1234567890abcdef1234567890abcdef',
-        fromNetwork: 'Stellar Testnet',
-        toNetwork: 'ETH Sepolia',
+        fromNetwork: isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet',
+        toNetwork: isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet',
         fromToken: 'XLM',
         toToken: 'ETH',
         amount: '100.00',
@@ -62,8 +67,8 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
       {
         id: '3',
         txHash: '0xabcdef1234567890abcdef1234567890abcdef12',
-        fromNetwork: 'ETH Sepolia',
-        toNetwork: 'Stellar Testnet',
+        fromNetwork: isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet',
+        toNetwork: isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet',
         fromToken: 'ETH',
         toToken: 'XLM',
         amount: '0.005',
@@ -76,8 +81,8 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
       {
         id: '4',
         txHash: '0x9876543210fedcba9876543210fedcba98765432',
-        fromNetwork: 'ETH Sepolia',  
-        toNetwork: 'Stellar Testnet',
+        fromNetwork: isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet',  
+        toNetwork: isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet',
         fromToken: 'ETH',
         toToken: 'XLM',
         amount: '0.002',
@@ -124,12 +129,16 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
         console.log('✅ Refreshed transactions from localStorage:', realTransactions.length, 'transactions');
         
         // Combine with mock data
+        const urlParams = new URLSearchParams(window.location.search);
+        const networkParam = urlParams.get('network');
+        const isTestnetMode = networkParam === 'testnet';
+        
         const mockTransactions: Transaction[] = [
           {
             id: 'mock1',
             txHash: '0x1234567890abcdef1234567890abcdef12345678',
-            fromNetwork: 'ETH Sepolia',
-            toNetwork: 'Stellar Testnet',
+            fromNetwork: isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet',
+            toNetwork: isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet',
             fromToken: 'ETH',
             toToken: 'XLM',
             amount: '0.001',
@@ -218,13 +227,13 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
         <div>
           <h2 className="text-2xl font-bold text-white mb-2">Transaction History</h2>
           <p className="text-gray-400 text-sm">
-            Track your cross-chain swaps between ETH Sepolia and Stellar Testnet
+            Track your cross-chain swaps between Ethereum and Stellar networks
           </p>
         </div>
         <button
           onClick={fetchTransactions}
           disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-[#3ABEFF]/20 hover:bg-[#3ABEFF]/30 text-[#3ABEFF] rounded-lg transition-colors button-hover-scale"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
@@ -244,7 +253,7 @@ export default function TransactionHistory({ ethAddress, stellarAddress }: Trans
             onClick={() => setFilter(key as any)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               filter === key
-                ? 'bg-blue-500 text-white'
+                ? 'bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] text-white'
                 : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
             }`}
           >

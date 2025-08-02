@@ -1,7 +1,7 @@
 {
-  "name": "@fusionbridge/stellar",
+  "name": "@oversync/stellar",
   "version": "1.0.0",
-  "description": "Stellar blockchain operations for FusionBridge cross-chain token swaps",
+  "description": "Stellar blockchain operations for OverSync cross-chain token swaps",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,5 +1,5 @@
 {
-  "name": "@fusionbridge/relayer",
+  "name": "@oversync/relayer",
   "version": "1.0.0",
   "description": "Event relayer service that listens to Ethereum events and triggers Stellar operations",
   "type": "module",
@@ -13,8 +13,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fusionbridge/contracts": "workspace:*",
-    "@fusionbridge/stellar": "workspace:*",
+    "@oversync/contracts": "workspace:*",
+    "@oversync/stellar": "workspace:*",
     "@stellar/stellar-sdk": "^11.3.0",
     "axios": "^1.10.0",
     "dotenv": "^16.3.0",

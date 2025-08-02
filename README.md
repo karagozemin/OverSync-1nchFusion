@@ -1,4 +1,4 @@
-# 🌉 FusionBridge
+# 🌉 OverSync
 
 > Cross-chain token bridge between Ethereum and Stellar using Fusion+ architecture with HTLC mechanism
 
@@ -112,7 +112,7 @@ Before running the project, you need to configure environment variables:
    RELAYER_STELLAR_SECRET=S[your-stellar-secret-key]
    
    # 1inch API (required for mainnet)
-   ONEINCH_API_KEY=57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN
+ONEINCH_API_KEY=your_1inch_api_key_here
    
    # Optional API keys:
    ETHERSCAN_API_KEY=YOUR_ETHERSCAN_API_KEY
@@ -179,7 +179,7 @@ You can switch networks in two ways:
    ```bash
    NETWORK_MODE=mainnet
    MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
-   ONEINCH_API_KEY=57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN
+ONEINCH_API_KEY=your_1inch_api_key_here
    ```
 
 2. **Funded Wallets:**
@@ -368,4 +368,4 @@ This project is built for the ETHGlobal Unite Hackathon, extending 1inch Fusion+
 
 ---
 
-**Built with ❤️ by the FusionBridge Team** 
+**Built with ❤️ by the OverBlock Team** 

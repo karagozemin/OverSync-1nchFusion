@@ -1,7 +1,7 @@
 {
-  "name": "@fusionbridge/frontend",
+  "name": "@oversync/frontend",
   "version": "1.0.0",
-  "description": "Frontend interface for FusionBridge cross-chain token swaps",
+  "description": "Frontend interface for OverSync cross-chain token swaps",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,8 +12,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fusionbridge/contracts": "workspace:*",
-    "@fusionbridge/stellar": "workspace:*",
+    "@oversync/contracts": "workspace:*",
+    "@oversync/stellar": "workspace:*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",

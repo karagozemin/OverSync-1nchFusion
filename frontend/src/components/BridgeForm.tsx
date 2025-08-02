@@ -156,11 +156,18 @@ const saveTransactionToHistory = (transaction: {
   status?: 'pending' | 'completed' | 'failed' | 'cancelled';
 }) => {
   try {
+    // Get current network info to determine correct network names
+    const isTestnetMode = isTestnet();
+    
     const historyTransaction = {
       id: transaction.orderId,
       txHash: transaction.txHash,
-      fromNetwork: transaction.direction === 'eth-to-xlm' ? 'ETH Sepolia' : 'Stellar Testnet',
-      toNetwork: transaction.direction === 'eth-to-xlm' ? 'Stellar Testnet' : 'ETH Sepolia',
+      fromNetwork: transaction.direction === 'eth-to-xlm' 
+        ? (isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet') 
+        : (isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet'),
+      toNetwork: transaction.direction === 'eth-to-xlm' 
+        ? (isTestnetMode ? 'Stellar Testnet' : 'Stellar Mainnet') 
+        : (isTestnetMode ? 'ETH Sepolia' : 'ETH Mainnet'),
       fromToken: transaction.direction === 'eth-to-xlm' ? 'ETH' : 'XLM',
       toToken: transaction.direction === 'eth-to-xlm' ? 'XLM' : 'ETH',
       amount: transaction.amount,
@@ -416,7 +423,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   // Fetch real-time exchange rates with adaptive rate limiting - REMOVED AUTO-REFRESH
   // Now only fetches when amount changes (on-demand)
   
-  // Miktar değiştiğinde karşılık gelen tutarı hesapla - UPDATED WITH ON-DEMAND PRICE FETCH
+      // Calculate corresponding amount when amount changes - UPDATED WITH ON-DEMAND PRICE FETCH
   useEffect(() => {
     if (!amount || isNaN(parseFloat(amount))) {
       setEstimatedAmount('');
@@ -486,7 +493,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     
     if (!amount || !ethAddress || !stellarAddress) {
       console.error('❌ Missing required fields:', { amount: !!amount, ethAddress: !!ethAddress, stellarAddress: !!stellarAddress });
-      alert('Lütfen tüm alanları doldurun ve cüzdanları bağlayın.');
+              alert('Please fill all fields and connect wallets.');
       return;
     }
     
@@ -579,7 +586,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       if (networkInfo.isTestnet) {
         // TESTNET: Use existing relayer system
         console.log('🔄 Creating bridge order via Relayer API (Testnet)...');
-        setStatusMessage('Order oluşturuluyor...');
+        setStatusMessage('Creating order...');
       
       console.log('📋 Order request:', orderRequest);
       
@@ -606,7 +613,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             } else {
         // MAINNET: Relayer handles 1inch integration
         console.log('🔄 Creating bridge order via Relayer API (Mainnet)...');
-        setStatusMessage('Mainnet order oluşturuluyor...');
+        setStatusMessage('Creating mainnet order...');
         
         // Send request to relayer (same as testnet)
         const response = await fetch(`${API_BASE_URL}/api/orders/create`, {
@@ -714,7 +721,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           setIsSubmitting(true);
           
           // Update status to confirmation waiting
-          setStatusMessage('Onaylanıyor...');
+          setStatusMessage('Confirming...');
           
           // Wait for transaction receipt to confirm success
           let receipt = null;
@@ -1042,7 +1049,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               });
               
               // Update status to completed
-              setStatusMessage('Tamamlandı ✅');
+              setStatusMessage('Completed ✅');
               setIsSubmitting(false);
               
             } else {
@@ -1122,7 +1129,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     }
   };
 
-  // Form sıfırlama
+  // Form reset
   const handleReset = () => {
     setAmount('');
     setEstimatedAmount('');
@@ -1130,11 +1137,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     setOrderId(null);
   };
 
-  // Cüzdanlar bağlı mı kontrol et
+  // Check if wallets are connected
   const walletsConnected = ethAddress && stellarAddress;
 
   return (
-    <div className="w-full max-w-md rounded-2xl p-6 bg-[#131823] flowing-border">
+    <div className="w-full max-w-lg rounded-3xl p-4 swap-card-bg swap-card-border">
       {orderCreated ? (
         <div className="text-center space-y-6">
           <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto">
@@ -1150,7 +1157,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             </p>
           </div>
           
-          <div className="bg-[#1a212f] rounded-lg p-4 text-left border border-white/5">
+          <div className="bg-[#1a212f] rounded-xl p-4 text-left border border-white/5 swap-card-bg">
             <div className="mb-2">
               <span className="text-sm text-gray-400">Order ID:</span>
               <p className="font-mono text-white">{orderId}</p>
@@ -1168,15 +1175,15 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           <div className="pt-4">
             <button
               onClick={handleReset}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl font-semibold transition-colors"
+              className="w-full bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] hover:from-[#5A52E8] hover:to-[#2A9FE8] text-white py-3 rounded-xl font-semibold transition-colors button-hover-scale"
             >
               New Swap
             </button>
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex justify-between items-center mb-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-medium text-white">Swap</h2>
             <div className="flex items-center gap-2">
               <button type="button" className="p-1.5 rounded-md hover:bg-white/5">
@@ -1195,8 +1202,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
           {/* From Section */}
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">You pay</label>
-            <div className="bg-[#1a212f] rounded-lg p-4 border border-white/5 input-container">
+            <label className="block text-xs font-medium text-gray-400 mb-1">You pay</label>
+            <div className="bg-[#1a212f] rounded-xl p-3 border border-white/5 input-container swap-card-bg">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <img 
@@ -1225,7 +1232,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                     setAmount(e.target.value);
                   }}
                   placeholder="0.0"
-                    className="flex-1 bg-transparent text-2xl font-medium text-white outline-none"
+                    className="flex-1 bg-transparent text-xl font-medium text-white outline-none"
                 />
                   <div className="flex gap-1">
                     <button
@@ -1278,8 +1285,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
           {/* To Section */}
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1">You receive</label>
-            <div className="bg-[#1a212f] rounded-lg p-4 border border-white/5 input-container">
+            <label className="block text-xs font-medium text-gray-400 mb-1">You receive</label>
+            <div className="bg-[#1a212f] rounded-xl p-3 border border-white/5 input-container swap-card-bg">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <img 
@@ -1295,10 +1302,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               </div>
               
               <div className="relative">
-                <div className="text-2xl font-medium text-white">
+                <div className="text-xl font-medium text-white">
                   {estimatedAmount || '0.0'}
                 </div>
-                <div className="text-sm text-gray-400 mt-1">
+                <div className="text-xs text-gray-400 mt-1">
                   $0.00
                 </div>
               </div>
@@ -1306,15 +1313,15 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           </div>
           
           {/* Fee and Time Estimate */}
-          <div className="flex justify-between items-center text-sm text-gray-400 px-1">
+          <div className="flex justify-between items-center text-xs text-gray-400 px-1">
             <div>Fee: $0.00</div>
             <div>~1 min</div>
           </div>
           
           {/* Real-time Exchange Rate Info */}
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+          <div className="bg-[#3ABEFF]/10 border border-[#3ABEFF]/20 rounded-xl p-2">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-blue-400 font-medium text-sm">
+              <div className="text-blue-400 font-medium text-xs">
                 💱 Live Exchange Rate
               </div>
               {isLoadingRate ? (
@@ -1328,7 +1335,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                 </div>
               )}
             </div>
-            <div className="text-white text-sm">
+            <div className="text-white text-xs">
               1 ETH = {exchangeRate.toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM
             </div>
             <div className="flex items-center justify-between mt-1">
@@ -1351,8 +1358,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           
           {/* Status Message */}
           {statusMessage && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center">
-              <div className="text-blue-400 font-medium">{statusMessage}</div>
+            <div className="bg-[#3ABEFF]/10 border border-[#3ABEFF]/20 rounded-xl p-2 text-center">
+              <div className="text-[#3ABEFF] font-medium">{statusMessage}</div>
             </div>
           )}
           
@@ -1360,9 +1367,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           <button
             type="submit"
             disabled={isSubmitting || !amount || !walletsConnected}
-            className={`w-full py-3 rounded-xl font-semibold transition-all ${
+            className={`w-full py-3 rounded-xl font-semibold transition-all button-hover-scale ${
               walletsConnected 
-                ? 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg hover:shadow-blue-500/20 text-white' 
+                ? 'bg-gradient-to-r from-[#6C63FF] to-[#3ABEFF] hover:from-[#5A52E8] hover:to-[#2A9FE8] hover:shadow-lg hover:shadow-[#6C63FF]/20 text-white' 
                 : 'bg-gray-600/50 text-gray-400 cursor-not-allowed border border-white/5'
             }`}
           >
