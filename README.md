@@ -8,7 +8,7 @@
 
 ---
 
-🎬 **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=DEMO_VIDEO_LINK)
+🎬 **Demo Video**: [Watch on YouTube](https://youtu.be/Ey9Psqh4YpY)
 
 🌐 **Live App**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/)
 
