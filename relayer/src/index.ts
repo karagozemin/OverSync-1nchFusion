@@ -700,7 +700,11 @@ const activeOrders = new Map();
             created: new Date().toISOString()
           };
           
-          activeOrders.set(orderId, orderData);
+          // ✅ Add networkMode for XLM→ETH processing
+          activeOrders.set(orderId, {
+            ...orderData,
+            networkMode: requestNetwork
+          });
           
           const totalCost = userAmountWei + actualSafetyDeposit;
           
@@ -799,7 +803,8 @@ const activeOrders = new Map();
           ethAddress: normalizedEthAddress,
           stellarAddress,
           amount: orderData.amount,  // ✅ Use wei format, not decimal string
-          exchangeRate: exchangeRate || ETH_TO_XLM_RATE
+          exchangeRate: exchangeRate || ETH_TO_XLM_RATE,
+          networkMode: requestNetwork  // ✅ Store network for XLM→ETH processing
         });
 
         console.log('✅ TESTNET ETH→XLM Order created:', orderId);
@@ -1096,9 +1101,14 @@ const activeOrders = new Map();
         console.log('💰 XLM→ETH: Sending ETH to user...');
         
         try {
-          // Load ethers and connect to Sepolia - REAL MODE ONLY
-          const rpcUrl = RELAYER_CONFIG.ethereum.rpcUrl;
+          // ✅ NETWORK-AWARE: Detect if this order was created for testnet
+          const orderNetworkMode = storedOrder.networkMode || 'mainnet'; // Check stored network
+          const rpcUrl = orderNetworkMode === 'testnet' 
+            ? (process.env.SEPOLIA_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE')
+            : (process.env.ETHEREUM_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE');
           const privateKey = process.env.RELAYER_PRIVATE_KEY;
+          
+          console.log(`🌐 XLM→ETH Network Detection: ${orderNetworkMode.toUpperCase()}`);
           
           if (!privateKey) {
             throw new Error('RELAYER_PRIVATE_KEY environment variable is required');
@@ -1113,9 +1123,36 @@ const activeOrders = new Map();
           
           console.log('🔑 Relayer ETH address:', relayerWallet.address);
           
-          // Get relayer balance
-          const balance = await provider.getBalance(relayerWallet.address);
-          console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+          // Get relayer balance with retry logic for Alchemy rate limiting
+          console.log('🔍 Getting relayer balance...');
+          let balance;
+          let balanceRetryCount = 0;
+          const maxBalanceRetries = 5;
+          
+          while (balanceRetryCount <= maxBalanceRetries) {
+            try {
+              balance = await provider.getBalance(relayerWallet.address);
+              console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+              break; // Success, exit retry loop
+            } catch (error: any) {
+              balanceRetryCount++;
+              
+              // Check if it's Alchemy rate limiting (code 429)
+              if (error?.code === 429 || error?.message?.includes('exceeded') || error?.message?.includes('rate limit')) {
+                const delayMs = Math.pow(2, balanceRetryCount) * 1000; // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                console.log(`⏳ Alchemy rate limit hit (process endpoint, attempt ${balanceRetryCount}/${maxBalanceRetries}). Waiting ${delayMs}ms...`);
+                
+                if (balanceRetryCount <= maxBalanceRetries) {
+                  await new Promise(resolve => setTimeout(resolve, delayMs));
+                  continue;
+                }
+              }
+              
+              // If it's not rate limiting or we've exhausted retries, throw
+              console.error('❌ Failed to get relayer balance (process endpoint):', error.message);
+              throw error;
+            }
+          }
           
                   // Calculate ETH amount to send using real-time rate from frontend
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
@@ -1154,9 +1191,49 @@ const activeOrders = new Map();
           }
         } else {
           // Convert XLM to ETH using exchange rate - SAFE CONVERSION
-          // Convert wei to ETH first, then calculate eth amount  
-        const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
-        const ethAmountDecimal = ethAmountFromWei / exchangeRate;
+          // For XLM→ETH: orderAmount should be XLM amount, not ETH wei
+          console.log('🔍 DEBUG - orderAmount for XLM→ETH conversion (process endpoint):', orderAmount);
+          
+          // ✅ CORRECT: Get XLM amount from stored order data
+          let xlmAmount = 1600; // Default fallback
+          
+          console.log('🔍 DEBUG - storedOrder data structure:', {
+            stellarAmount: storedOrder?.stellarAmount,
+            stellar: storedOrder?.stellar,
+            orderAmount
+          });
+          
+          // Priority 1: Use stored stellar.amount (readable XLM format)
+          if (storedOrder?.stellar?.amount) {
+            xlmAmount = parseFloat(storedOrder.stellar.amount);
+            console.log('✅ Using storedOrder.stellar.amount (process endpoint):', xlmAmount, 'XLM');
+          }
+          // Priority 2: Use stellarAmount (stroops) and convert to XLM
+          else if (storedOrder?.stellarAmount) {
+            const stellarAmountStroops = parseFloat(storedOrder.stellarAmount);
+            xlmAmount = stellarAmountStroops / 1e7; // Convert stroops to XLM
+            console.log('✅ Using storedOrder.stellarAmount converted (process endpoint):', stellarAmountStroops, 'stroops →', xlmAmount, 'XLM');
+          }
+          // Priority 3: Try orderAmount if it looks reasonable
+          else if (orderAmount && typeof orderAmount === 'string') {
+            const numericOrderAmount = parseFloat(orderAmount);
+            console.log('🔍 DEBUG - Numeric orderAmount (process endpoint):', numericOrderAmount);
+            
+            // If it's a reasonable number (< 1M), it's likely XLM
+            if (numericOrderAmount > 0 && numericOrderAmount < 1000000) {
+              xlmAmount = numericOrderAmount;
+              console.log('✅ Using orderAmount as XLM amount (process endpoint):', xlmAmount);
+            } else {
+              console.log('⚠️ orderAmount seems wrong, using default XLM (process endpoint)');
+            }
+          }
+          
+          console.log('🪙 XLM amount for conversion (process endpoint):', xlmAmount);
+          console.log('💱 Exchange rate (process endpoint):', exchangeRate, 'XLM per ETH');
+          
+          // ✅ CORRECT FORMULA: XLM amount / exchange rate = ETH amount
+          const ethAmountDecimal = xlmAmount / exchangeRate;
+          console.log('🔢 Calculation (process endpoint):', xlmAmount, '÷', exchangeRate, '=', ethAmountDecimal, 'ETH');
           
           // Limit to reasonable ETH amounts (max 10 ETH per transaction)
           const safeEthAmount = Math.min(ethAmountDecimal, 10);
@@ -1195,21 +1272,61 @@ const activeOrders = new Map();
               ethTxResponse = await relayerWallet.sendTransaction(tx);
               break; // Success, exit retry loop
             } catch (txError: any) {
-              if (txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 && retryCount < maxRetries) {
-                retryCount++;
-                const delay = 2000 * retryCount; // 2s, 4s, 6s
-                console.log(`⏳ Rate limited, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              } else {
-                throw txError; // Re-throw if not rate limiting or max retries reached
+              retryCount++;
+              
+              // Enhanced Alchemy rate limiting detection
+              const isRateLimit = txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 ||
+                                txError.code === 429 ||
+                                txError.message?.includes('exceeded') ||
+                                txError.message?.includes('compute units') ||
+                                txError.message?.includes('rate limit') ||
+                                txError.error?.message?.includes('exceeded');
+              
+              if (isRateLimit && retryCount <= maxRetries) {
+                const delayMs = Math.pow(2, retryCount) * 1000; // Exponential backoff: 2s, 4s, 8s
+                console.log(`⏳ Alchemy rate limit detected (process endpoint, attempt ${retryCount}/${maxRetries}). Error:`, txError.message || txError.error?.message);
+                console.log(`⏳ Waiting ${delayMs}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                continue;
               }
+              
+              // If not rate limiting or exhausted retries, throw
+              console.error('❌ Transaction failed after retries (process endpoint):', txError);
+              throw txError;
             }
           }
           console.log('📤 ETH transaction sent:', ethTxResponse.hash);
           
-          // Wait for confirmation
-          const ethTxReceipt = await ethTxResponse.wait();
-          console.log('✅ ETH transaction confirmed!');
+          // Wait for confirmation with retry logic
+          let ethTxReceipt;
+          let confirmRetryCount = 0;
+          const maxConfirmRetries = 3;
+          
+          while (confirmRetryCount <= maxConfirmRetries) {
+            try {
+              ethTxReceipt = await ethTxResponse.wait();
+              console.log('✅ ETH transaction confirmed!');
+              break;
+            } catch (confirmError: any) {
+              confirmRetryCount++;
+              
+              // Check for rate limiting during confirmation
+              const isRateLimit = confirmError.code === 429 ||
+                                confirmError.message?.includes('exceeded') ||
+                                confirmError.message?.includes('rate limit');
+              
+              if (isRateLimit && confirmRetryCount <= maxConfirmRetries) {
+                const delayMs = Math.pow(2, confirmRetryCount) * 1000;
+                console.log(`⏳ Rate limit during confirmation (process endpoint, attempt ${confirmRetryCount}/${maxConfirmRetries}). Waiting ${delayMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                continue;
+              }
+              
+              // If not rate limiting or exhausted retries, throw
+              console.error('❌ Transaction confirmation failed (process endpoint):', confirmError);
+              throw confirmError;
+            }
+          }
           console.log('🔍 ETH tx hash:', ethTxReceipt?.hash);
           console.log('🌐 View on Etherscan: https://sepolia.etherscan.io/tx/' + ethTxReceipt?.hash);
           
@@ -1393,7 +1510,19 @@ const activeOrders = new Map();
       console.log('🔍 DEBUG: Environment check - ETHEREUM_RPC_URL:', process.env.ETHEREUM_RPC_URL ? 'SET' : 'NOT SET');
       console.log('🔍 DEBUG: Environment check - RELAYER_PRIVATE_KEY:', process.env.RELAYER_PRIVATE_KEY ? 'SET' : 'NOT SET');
       
-      const { orderId, stellarTxHash, stellarAddress, ethAddress } = req.body;
+      const { orderId, stellarTxHash, stellarAddress, ethAddress, networkMode } = req.body;
+      
+      // ✅ NETWORK DETECTION: Check request body first, then stored order, then default
+      const requestNetwork = networkMode || 
+                            (req.query.network as string) || 
+                            DEFAULT_NETWORK_MODE;
+      
+      console.log('🌐 XLM→ETH Endpoint Network Detection:', {
+        bodyNetworkMode: networkMode,
+        queryNetwork: req.query.network,
+        defaultMode: DEFAULT_NETWORK_MODE,
+        finalDecision: requestNetwork.toUpperCase()
+      });
       
       if (!orderId || !stellarTxHash || !ethAddress) {
         console.log('❌ Missing required fields:', { orderId: !!orderId, stellarTxHash: !!stellarTxHash, ethAddress: !!ethAddress });
@@ -1423,9 +1552,14 @@ const activeOrders = new Map();
       console.log('🎯 XLM→ETH: Sending ETH to user...', { userEthAddress, orderAmount });
       
       try {
-        // Load ethers and connect to Sepolia - REAL MODE ONLY
-        const rpcUrl = RELAYER_CONFIG.ethereum.rpcUrl;
+        // ✅ NETWORK-AWARE: Use request network first, fallback to stored order
+        const orderNetworkMode = requestNetwork || storedOrder?.networkMode || 'mainnet';
+        const rpcUrl = orderNetworkMode === 'testnet' 
+          ? (process.env.SEPOLIA_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE')
+          : (process.env.ETHEREUM_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE');
         const privateKey = process.env.RELAYER_PRIVATE_KEY;
+        
+        console.log(`🌐 XLM→ETH Network Detection (2nd endpoint): ${orderNetworkMode.toUpperCase()}`);
         
         if (!privateKey) {
           throw new Error('RELAYER_PRIVATE_KEY environment variable is required');
@@ -1440,9 +1574,36 @@ const activeOrders = new Map();
         
         console.log('🔑 Relayer ETH address:', relayerWallet.address);
         
-        // Get relayer balance
-        const balance = await provider.getBalance(relayerWallet.address);
-        console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+        // Get relayer balance with retry logic for Alchemy rate limiting
+        console.log('🔍 Getting relayer balance...');
+        let balance;
+        let balanceRetryCount2 = 0;
+        const maxBalanceRetries2 = 5;
+        
+        while (balanceRetryCount2 <= maxBalanceRetries2) {
+          try {
+            balance = await provider.getBalance(relayerWallet.address);
+            console.log('💰 Relayer ETH balance:', ethers.formatEther(balance), 'ETH');
+            break; // Success, exit retry loop
+          } catch (error: any) {
+            balanceRetryCount2++;
+            
+            // Check if it's Alchemy rate limiting (code 429)
+            if (error?.code === 429 || error?.message?.includes('exceeded') || error?.message?.includes('rate limit')) {
+              const delayMs = Math.pow(2, balanceRetryCount2) * 1000; // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+              console.log(`⏳ Alchemy rate limit hit (attempt ${balanceRetryCount2}/${maxBalanceRetries2}). Waiting ${delayMs}ms...`);
+              
+              if (balanceRetryCount2 <= maxBalanceRetries2) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                continue;
+              }
+            }
+            
+            // If it's not rate limiting or we've exhausted retries, throw
+            console.error('❌ Failed to get relayer balance:', error.message);
+            throw error;
+          }
+        }
         
         // Calculate ETH amount to send using real-time rate from frontend  
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
@@ -1476,9 +1637,49 @@ const activeOrders = new Map();
           ethAmount = ethers.parseEther(roundedTargetAmount.toString()).toString();
         } else {
           // Convert XLM to ETH using exchange rate - SAFE CONVERSION
-          // Convert wei to ETH first, then calculate eth amount
-          const ethAmountFromWei = parseFloat(ethers.formatEther(orderAmount || '100000000000000000')); // 0.1 ETH default
-          const ethAmountDecimal = ethAmountFromWei / exchangeRate;
+          // For XLM→ETH: orderAmount should be XLM amount, not ETH wei
+          console.log('🔍 DEBUG - orderAmount for XLM→ETH conversion:', orderAmount);
+          
+          // ✅ CORRECT: Get XLM amount from stored order data
+          let xlmAmount = 1600; // Default fallback
+          
+          console.log('🔍 DEBUG - storedOrder data structure (dedicated endpoint):', {
+            stellarAmount: storedOrder?.stellarAmount,
+            stellar: storedOrder?.stellar,
+            orderAmount
+          });
+          
+          // Priority 1: Use stored stellar.amount (readable XLM format)
+          if (storedOrder?.stellar?.amount) {
+            xlmAmount = parseFloat(storedOrder.stellar.amount);
+            console.log('✅ Using storedOrder.stellar.amount (dedicated endpoint):', xlmAmount, 'XLM');
+          }
+          // Priority 2: Use stellarAmount (stroops) and convert to XLM
+          else if (storedOrder?.stellarAmount) {
+            const stellarAmountStroops = parseFloat(storedOrder.stellarAmount);
+            xlmAmount = stellarAmountStroops / 1e7; // Convert stroops to XLM
+            console.log('✅ Using storedOrder.stellarAmount converted (dedicated endpoint):', stellarAmountStroops, 'stroops →', xlmAmount, 'XLM');
+          }
+          // Priority 3: Try orderAmount if it looks reasonable
+          else if (orderAmount && typeof orderAmount === 'string') {
+            const numericOrderAmount = parseFloat(orderAmount);
+            console.log('🔍 DEBUG - Numeric orderAmount (dedicated endpoint):', numericOrderAmount);
+            
+            // If it's a reasonable number (< 1M), it's likely XLM
+            if (numericOrderAmount > 0 && numericOrderAmount < 1000000) {
+              xlmAmount = numericOrderAmount;
+              console.log('✅ Using orderAmount as XLM amount (dedicated endpoint):', xlmAmount);
+            } else {
+              console.log('⚠️ orderAmount seems wrong, using default XLM (dedicated endpoint)');
+            }
+          }
+          
+          console.log('🪙 XLM amount for conversion:', xlmAmount);
+          console.log('💱 Exchange rate:', exchangeRate, 'XLM per ETH');
+          
+          // ✅ CORRECT FORMULA: XLM amount / exchange rate = ETH amount
+          const ethAmountDecimal = xlmAmount / exchangeRate;
+          console.log('🔢 Calculation:', xlmAmount, '÷', exchangeRate, '=', ethAmountDecimal, 'ETH');
           
           // Limit to reasonable ETH amounts (max 10 ETH per transaction)
           const safeEthAmount = Math.min(ethAmountDecimal, 10);
@@ -1508,29 +1709,69 @@ const activeOrders = new Map();
         
         // Send transaction with retry for rate limiting
         let ethTxResponse;
-        let retryCount = 0;
-        const maxRetries = 3;
+        let txRetryCount = 0;
+        const maxTxRetries = 3;
         
-        while (retryCount <= maxRetries) {
+        while (txRetryCount <= maxTxRetries) {
           try {
             ethTxResponse = await relayerWallet.sendTransaction(tx);
             break; // Success, exit retry loop
           } catch (txError: any) {
-            if (txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 && retryCount < maxRetries) {
-              retryCount++;
-              const delay = 2000 * retryCount; // 2s, 4s, 6s
-              console.log(`⏳ Rate limited, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-              throw txError; // Re-throw if not rate limiting or max retries reached
+            txRetryCount++;
+            
+            // Enhanced Alchemy rate limiting detection
+            const isRateLimit = txError.code === 'UNKNOWN_ERROR' && txError.error?.code === 429 ||
+                              txError.code === 429 ||
+                              txError.message?.includes('exceeded') ||
+                              txError.message?.includes('compute units') ||
+                              txError.message?.includes('rate limit') ||
+                              txError.error?.message?.includes('exceeded');
+            
+            if (isRateLimit && txRetryCount <= maxTxRetries) {
+              const delayMs = Math.pow(2, txRetryCount) * 1000; // Exponential backoff: 2s, 4s, 8s
+              console.log(`⏳ Alchemy rate limit detected (attempt ${txRetryCount}/${maxTxRetries}). Error:`, txError.message || txError.error?.message);
+              console.log(`⏳ Waiting ${delayMs}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
             }
+            
+            // If not rate limiting or exhausted retries, throw
+            console.error('❌ Transaction failed after retries:', txError);
+            throw txError;
           }
         }
         console.log('📤 ETH transaction sent:', ethTxResponse.hash);
         
-        // Wait for confirmation
-        const ethTxReceipt = await ethTxResponse.wait();
-        console.log('✅ ETH transaction confirmed!');
+        // Wait for confirmation with retry logic
+        let ethTxReceipt;
+        let confirmRetryCount = 0;
+        const maxConfirmRetries = 3;
+        
+        while (confirmRetryCount <= maxConfirmRetries) {
+          try {
+            ethTxReceipt = await ethTxResponse.wait();
+            console.log('✅ ETH transaction confirmed!');
+            break;
+          } catch (confirmError: any) {
+            confirmRetryCount++;
+            
+            // Check for rate limiting during confirmation
+            const isRateLimit = confirmError.code === 429 ||
+                              confirmError.message?.includes('exceeded') ||
+                              confirmError.message?.includes('rate limit');
+            
+            if (isRateLimit && confirmRetryCount <= maxConfirmRetries) {
+              const delayMs = Math.pow(2, confirmRetryCount) * 1000;
+              console.log(`⏳ Rate limit during confirmation (attempt ${confirmRetryCount}/${maxConfirmRetries}). Waiting ${delayMs}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
+            }
+            
+            // If not rate limiting or exhausted retries, throw
+            console.error('❌ Transaction confirmation failed:', confirmError);
+            throw confirmError;
+          }
+        }
         console.log('🔍 ETH tx hash:', ethTxReceipt?.hash);
         console.log('🌐 View on Etherscan: https://sepolia.etherscan.io/tx/' + ethTxReceipt?.hash);
         

@@ -979,7 +979,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             orderId: result.orderId,
             stellarTxHash: submitResult.hash,
             stellarAddress: stellarAddress,
-            ethAddress: ethAddress
+            ethAddress: ethAddress,
+            networkMode: networkInfo.isTestnet ? 'testnet' : 'mainnet'  // ✅ Send network mode to backend
           };
           
           console.log('🔍 FRONTEND DEBUG: XLM→ETH request body:', JSON.stringify(requestBody, null, 2));
