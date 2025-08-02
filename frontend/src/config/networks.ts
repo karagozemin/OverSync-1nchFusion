@@ -151,20 +151,30 @@ export const FAUCETS = {
 export const getCurrentNetwork = () => {
   let networkName = 'testnet';
   
-  // Check URL parameters first (for dynamic switching)
+  // Check URL parameters first (highest priority)
   if (typeof window !== 'undefined') {
     const urlParams = new URLSearchParams(window.location.search);
     const urlNetwork = urlParams.get('network');
+    console.log('🔍 getCurrentNetwork - URL Network Parameter:', urlNetwork);
     if (urlNetwork === 'mainnet' || urlNetwork === 'testnet') {
       networkName = urlNetwork;
+      console.log('✅ getCurrentNetwork - Using URL network parameter:', networkName);
+      return {
+        ethereum: ETHEREUM_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
+        stellar: STELLAR_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
+      };
     }
   }
   
-  // Fallback to environment variable
-  if (networkName === 'testnet') {
-    networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  // Fallback to environment variable (lower priority)
+  const envNetwork = (import.meta as any).env?.VITE_NETWORK;
+  console.log('🔍 getCurrentNetwork - Environment VITE_NETWORK:', envNetwork);
+  if (envNetwork === 'mainnet' || envNetwork === 'testnet') {
+    networkName = envNetwork;
+    console.log('✅ getCurrentNetwork - Using environment network:', networkName);
   }
   
+  console.log('🔍 getCurrentNetwork - Final network:', networkName);
   return {
     ethereum: ETHEREUM_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'sepolia'],
     stellar: STELLAR_NETWORKS[networkName === 'mainnet' ? 'mainnet' : 'testnet'],
@@ -208,19 +218,27 @@ export const getFaucets = () => {
 export const isTestnet = () => {
   let networkName = 'testnet';
   
-  // Check URL parameters first
+  // Check URL parameters first (highest priority)
   if (typeof window !== 'undefined') {
     const urlParams = new URLSearchParams(window.location.search);
     const urlNetwork = urlParams.get('network');
+    console.log('🔍 URL Network Parameter:', urlNetwork);
     if (urlNetwork === 'mainnet' || urlNetwork === 'testnet') {
       networkName = urlNetwork;
+      console.log('✅ Using URL network parameter:', networkName);
+      return networkName !== 'mainnet';
     }
   }
   
-  // Fallback to environment variable
-  if (networkName === 'testnet') {
-    networkName = (import.meta as any).env?.VITE_NETWORK || 'testnet';
+  // Fallback to environment variable (lower priority)
+  const envNetwork = (import.meta as any).env?.VITE_NETWORK;
+  console.log('🔍 Environment VITE_NETWORK:', envNetwork);
+  if (envNetwork === 'mainnet' || envNetwork === 'testnet') {
+    networkName = envNetwork;
+    console.log('✅ Using environment network:', networkName);
   }
   
-  return networkName !== 'mainnet';
+  const isTestnetMode = networkName !== 'mainnet';
+  console.log('🔍 Final isTestnet result:', isTestnetMode, 'for network:', networkName);
+  return isTestnetMode;
 }; 
