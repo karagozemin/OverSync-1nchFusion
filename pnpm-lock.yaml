@@ -70,12 +70,6 @@ importers:
 
   frontend:
     dependencies:
-      '@fusionbridge/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@fusionbridge/stellar':
-        specifier: workspace:*
-        version: link:../stellar
       '@rainbow-me/rainbowkit':
         specifier: ^1.3.0
         version: 1.3.7(@types/react@18.3.23)(react-dom@18.3.1)(react@18.3.1)(viem@1.21.4)(wagmi@1.4.13)
@@ -158,10 +152,10 @@ importers:
 
   relayer:
     dependencies:
-      '@fusionbridge/contracts':
+      '@oversync/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@fusionbridge/stellar':
+      '@oversync/stellar':
         specifier: workspace:*
         version: link:../stellar
       '@stellar/stellar-sdk':
