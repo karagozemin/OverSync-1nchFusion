@@ -234,7 +234,7 @@ const API_BASE_URL = 'https://oversync-1nchfusion-production.up.railway.app';
 
 export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormProps) {
   const [direction, setDirection] = useState<'eth_to_xlm' | 'xlm_to_eth'>('eth_to_xlm');
-  const [networkInfo] = useState(() => {
+  const [networkInfo, setNetworkInfo] = useState(() => {
     const currentNetwork = getCurrentNetwork();
     const isTestnetMode = isTestnet();
     
@@ -245,6 +245,28 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       expectedChainId: isTestnetMode ? SEPOLIA_CHAIN_ID : MAINNET_CHAIN_ID
     };
   });
+
+  // Update network info when network changes
+  useEffect(() => {
+    const updateNetworkInfo = () => {
+      const currentNetwork = getCurrentNetwork();
+      const isTestnetMode = isTestnet();
+      
+      setNetworkInfo({
+        isTestnet: isTestnetMode,
+        ethereum: currentNetwork.ethereum,
+        stellar: currentNetwork.stellar,
+        expectedChainId: isTestnetMode ? SEPOLIA_CHAIN_ID : MAINNET_CHAIN_ID
+      });
+    };
+
+    // Update immediately
+    updateNetworkInfo();
+
+    // Listen for network changes
+    const interval = setInterval(updateNetworkInfo, 1000);
+    return () => clearInterval(interval);
+  }, []);
   const [amount, setAmount] = useState('');
   const [estimatedAmount, setEstimatedAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
