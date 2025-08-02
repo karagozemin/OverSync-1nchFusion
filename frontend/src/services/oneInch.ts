@@ -39,7 +39,7 @@ export interface OneInchOrderResponse {
 }
 
 const ONEINCH_API_BASE = 'https://api.1inch.dev/fusion-plus';
-const API_KEY = '57bHerg7n0jVKOW9uog2M6nQ0YaLeXgN';
+const API_KEY = (import.meta as any).env?.VITE_ONEINCH_API_KEY || 'YOUR_1INCH_API_KEY_HERE';
 
 class OneInchService {
   private apiKey: string;

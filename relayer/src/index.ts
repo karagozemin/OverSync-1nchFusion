@@ -971,7 +971,7 @@ const activeOrders = new Map();
         console.log('🔢 XLM→ETH PENDING - ETH amount will be:', roundedEthAmount, 'ETH');
 
         // Store pending order data (NO ETH HTLC YET!)
-        const relayerStellarAddress = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
+        const relayerStellarAddress = process.env.RELAYER_STELLAR_PUBLIC || 'YOUR_STELLAR_PUBLIC_KEY_HERE';
         
         const orderData = {
           orderId,
@@ -1955,7 +1955,7 @@ const activeOrders = new Map();
         const { Horizon } = await import('@stellar/stellar-sdk');
         const server = new Horizon.Server(stellarConfig.horizonUrl);
         
-        const relayerStellarPublic = process.env.RELAYER_STELLAR_PUBLIC || 'GCDARJFKKSTJYAZC647H4ZSSSPXPPSKOWOHGMUNCT22VG74KXZ5BHVNR';
+        const relayerStellarPublic = process.env.RELAYER_STELLAR_PUBLIC || 'YOUR_STELLAR_PUBLIC_KEY_HERE';
         
         // Get current ledger
         const ledgerResponse = await server.ledgers().order('desc').limit(1).call();

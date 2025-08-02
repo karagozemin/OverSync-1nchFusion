@@ -31,7 +31,7 @@ export const ETHEREUM_NETWORKS: Record<string, NetworkConfig> = {
     id: 1,
     name: 'ethereum',
     displayName: 'Ethereum Mainnet',
-    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE',
+    rpcUrl: (import.meta as any).env?.VITE_MAINNET_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE',
     explorerUrl: 'https://etherscan.io',
     escrowFactory: '0xa7bCb4EAc8964306F9e3764f67Db6A7af6DdF99A', // 1inch Escrow Factory
     nativeCurrency: {
@@ -45,7 +45,7 @@ export const ETHEREUM_NETWORKS: Record<string, NetworkConfig> = {
     id: 11155111,
     name: 'sepolia',
     displayName: 'Sepolia Testnet',
-    rpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE',
+    rpcUrl: (import.meta as any).env?.VITE_SEPOLIA_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE',
     explorerUrl: 'https://sepolia.etherscan.io',
     escrowFactory: '0x3f344ACDd17a0c4D21096da895152820f595dc8A', // Testnet HTLC Bridge
     nativeCurrency: {

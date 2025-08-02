@@ -8,7 +8,7 @@ async function main() {
   
   // Contract address
   const contractAddress = "0x3f344ACDd17a0c4D21096da895152820f595dc8A";
-  const relayerAddress = "0x686Be1DEF4b9Bd725A5Df07505E25a94Fa71394c";
+  const relayerAddress = process.env.RELAYER_ETH_ADDRESS || "YOUR_ETH_ADDRESS_HERE";
   
   // Get contract instance
   const htlcBridge = await ethers.getContractAt("HTLCBridge", contractAddress);
