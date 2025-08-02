@@ -10,9 +10,16 @@
 
 🎬 **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=DEMO_VIDEO_LINK)
 
-🌐 **Live App**: [https://over-sync-1nch-fusion-frontend-bwlq.vercel.app/](https://over-sync-1nch-fusion-frontend-bwlq.vercel.app/)
+🌐 **Live App**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/)
+
+🔗 **Backend API**: [https://oversync-1nchfusion-production.up.railway.app/](https://oversync-1nchfusion-production.up.railway.app/)
 
 Built for **ETHGlobal Unite Hackathon** - Extending 1inch Fusion+ to support Stellar blockchain.
+
+### 🎯 Quick Links
+
+- **Testnet Mode**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/?network=testnet](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/?network=testnet)
+- **Mainnet Mode**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/?network=mainnet](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/?network=mainnet)
 
 ## 🎯 Overview
 
@@ -84,6 +91,13 @@ oversync/
 ```
 
 ## 🚀 Quick Start
+
+### 🌐 Live Deployment
+
+The application is fully deployed and ready to use:
+
+- **Frontend (Vercel)**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/)
+- **Backend (Railway)**: [https://oversync-1nchfusion-production.up.railway.app/](https://oversync-1nchfusion-production.up.railway.app/)
 
 ### Prerequisites
 
