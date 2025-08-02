@@ -11,15 +11,89 @@ interface EnhancedBridgeConfig {
 }
 
 interface CrossChainOrderParams {
-  // placeholder
+  ethereumToken: string;
+  ethereumSender: string;
+  ethereumBeneficiary: string;
+  ethereumRefundAddress: string;
+  ethereumAmount: string;
+  stellarAmount: string;
+  safetyDeposit: string;
+  timelock: number;
+  hashLock: string;
 }
 
 interface BridgeOrderState {
-  // placeholder
+  orderId: string;
+  status: BridgeOrderStatus;
+  filledAmount: string;
+  ethereumTxHash?: string;
+  stellarTxHash?: string;
+  // Add other properties as needed
 }
 
-interface BridgeOrderStatus {
-  // placeholder
+enum BridgeOrderStatus {
+  CREATED = 'CREATED',
+  ETHEREUM_PENDING = 'ETHEREUM_PENDING',
+  STELLAR_PENDING = 'STELLAR_PENDING',
+  BOTH_ACTIVE = 'BOTH_ACTIVE',
+  PARTIALLY_FILLED = 'PARTIALLY_FILLED',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED'
+}
+
+// Mock EnhancedStellarBridge class
+class EnhancedStellarBridge {
+  constructor(config: EnhancedBridgeConfig) {
+    // placeholder
+  }
+
+  async createCrossChainOrder(params: CrossChainOrderParams): Promise<BridgeOrderState> {
+    // placeholder
+    return {
+      orderId: 'mock-order-id',
+      status: BridgeOrderStatus.CREATED,
+      filledAmount: '0'
+    };
+  }
+
+  async claimCrossChainOrder(orderId: string, preimage: string, claimAmount?: string): Promise<any> {
+    // placeholder
+    return {
+      ethereumTxHash: 'mock-eth-tx',
+      stellarTxHash: 'mock-stellar-tx'
+    };
+  }
+
+  async refundCrossChainOrder(orderId: string): Promise<any> {
+    // placeholder
+    return {
+      ethereumTxHash: 'mock-eth-tx',
+      stellarTxHash: 'mock-stellar-tx'
+    };
+  }
+
+  getOrderState(orderId: string): BridgeOrderState | undefined {
+    // placeholder
+    return undefined;
+  }
+
+  getAllOrders(): BridgeOrderState[] {
+    // placeholder
+    return [];
+  }
+
+  getOrdersByStatus(status: BridgeOrderStatus): BridgeOrderState[] {
+    // placeholder
+    return [];
+  }
+
+  async monitorOrderExpiration(): Promise<void> {
+    // placeholder
+  }
+
+  async processCrossChainMessages(): Promise<void> {
+    // placeholder
+  }
 }
 
 /**
