@@ -3,7 +3,7 @@
  * @description Manages auction presets and configurations
  */
 
-import { AuctionConfig } from './dutch-auction.js';
+
 import { AuctionPoint } from './types.js';
 import { gasPriceTracker } from './gas-tracker.js';
 import { getCurrentTimestamp } from './utils.js';
@@ -169,7 +169,7 @@ export class PresetManager {
   /**
    * Get auction configuration from preset
    */
-  getAuctionConfig(presetId: string, customStartTime?: number): AuctionConfig | null {
+  getAuctionConfig(presetId: string, customStartTime?: number): any {
     const preset = this.presets.get(presetId);
     if (!preset) {
       return null;

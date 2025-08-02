@@ -163,8 +163,7 @@ import FusionRpcHandler from './rpc-methods.js';
 import EventHistoryManager from './event-history.js';
 import ClientSubscriptionManager from './client-subscriptions.js';
 
-// Phase 3.5: Resolver Integration imports
-import ResolverManager, { ResolverTier, ResolverStatus, WhitelistConfig } from './resolver-manager.js';
+
 
 // Phase 5: Recovery System imports
 import RecoveryService, { RecoveryConfig, RecoveryType, RecoveryStatus } from './recovery-service.js';
@@ -2514,35 +2513,7 @@ console.log('✅ Phase 4: Event System initialized');
 
 // ===== PHASE 3.5: RESOLVER INTEGRATION INITIALIZATION =====
 
-// Initialize resolver whitelist configuration
-const resolverConfig: WhitelistConfig = {
-  requireWhitelist: true,
-  autoApproval: false,
-  maxResolvers: 100,
-  stakingRequirement: '1000000000000000000', // 1 ETH
-  kycRequired: true,
-  kybRequired: true,
-  competitionEnabled: true,
-  minReputationScore: 30
-};
 
-// Initialize resolver manager
-const resolverManager = new ResolverManager(ordersService, resolverConfig);
-
-// Connect resolver manager to event system
-resolverManager.on('competitionStarted', (event) => {
-  eventManager.emitEvent(EventType.FragmentReady, event.orderId, event);
-});
-
-resolverManager.on('competitionEnded', (event) => {
-  eventManager.emitEvent(EventType.SecretShared, event.orderId, event);
-});
-
-resolverManager.on('performanceUpdated', (event) => {
-  eventManager.emitEvent(EventType.RecommendationGenerated, event.address, event);
-});
-
-console.log('✅ Phase 3.5: Resolver Integration initialized');
 
 // ===== PHASE 5: RECOVERY SYSTEM INITIALIZATION =====
 
@@ -2707,196 +2678,8 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
-// ===== PHASE 3.5: RESOLVER INTEGRATION ENDPOINTS =====
 
-// GET /resolvers - Get all whitelisted resolvers
-app.get('/resolvers', async (req, res) => {
-  try {
-    const resolvers = resolverManager.getResolvers();
-    res.json(createSuccessResponse(resolvers));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get resolvers', getErrorMessage(error)));
-  }
-});
 
-// GET /resolvers/:address - Get specific resolver
-app.get('/resolvers/:address', async (req, res) => {
-  try {
-    const { address } = req.params;
-    const resolver = resolverManager.getResolver(address);
-    
-    if (!resolver) {
-      return res.status(404).json(createErrorResponse('Resolver not found'));
-    }
-    
-    res.json(createSuccessResponse(resolver));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get resolver', getErrorMessage(error)));
-  }
-});
-
-// POST /resolvers - Add new resolver to whitelist
-app.post('/resolvers', async (req, res) => {
-  try {
-    const { address, name, description, website, tier } = req.body;
-    
-    if (!address) {
-      return res.status(400).json(createErrorResponse('Resolver address is required'));
-    }
-    
-    const added = resolverManager.addResolver(address, {
-      name,
-      description,
-      website,
-      kycStatus: 'pending',
-      kybStatus: 'pending'
-    }, tier || ResolverTier.Standard);
-    
-    if (!added) {
-      return res.status(400).json(createErrorResponse('Resolver already exists'));
-    }
-    
-    res.json(createSuccessResponse({ address, added: true }));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to add resolver', getErrorMessage(error)));
-  }
-});
-
-// PUT /resolvers/:address/status - Update resolver status
-app.put('/resolvers/:address/status', async (req, res) => {
-  try {
-    const { address } = req.params;
-    const { status } = req.body;
-    
-    if (!Object.values(ResolverStatus).includes(status)) {
-      return res.status(400).json(createErrorResponse('Invalid status'));
-    }
-    
-    const updated = resolverManager.updateResolverStatus(address, status);
-    
-    if (!updated) {
-      return res.status(404).json(createErrorResponse('Resolver not found'));
-    }
-    
-    res.json(createSuccessResponse({ address, status, updated: true }));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to update resolver status', getErrorMessage(error)));
-  }
-});
-
-// DELETE /resolvers/:address - Remove resolver from whitelist
-app.delete('/resolvers/:address', async (req, res) => {
-  try {
-    const { address } = req.params;
-    
-    const removed = resolverManager.removeResolver(address);
-    
-    if (!removed) {
-      return res.status(404).json(createErrorResponse('Resolver not found'));
-    }
-    
-    res.json(createSuccessResponse({ address, removed: true }));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to remove resolver', getErrorMessage(error)));
-  }
-});
-
-// GET /competitions - Get active competitions
-app.get('/competitions', async (req, res) => {
-  try {
-    const competitions = resolverManager.getActiveCompetitions();
-    res.json(createSuccessResponse(competitions));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get competitions', getErrorMessage(error)));
-  }
-});
-
-// POST /competitions/start - Start competition for fragment
-app.post('/competitions/start', async (req, res) => {
-  try {
-    const { orderId, fragmentIndex } = req.body;
-    
-    if (!orderId || fragmentIndex === undefined) {
-      return res.status(400).json(createErrorResponse('Order ID and fragment index are required'));
-    }
-    
-    const competition = resolverManager.startCompetition(orderId, fragmentIndex);
-    res.json(createSuccessResponse(competition));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to start competition', getErrorMessage(error)));
-  }
-});
-
-// POST /competitions/bid - Submit bid for competition
-app.post('/competitions/bid', async (req, res) => {
-  try {
-    const { 
-      orderId, 
-      fragmentIndex, 
-      resolverAddress, 
-      bidAmount, 
-      gasPrice, 
-      executionTime, 
-      confidence 
-    } = req.body;
-    
-    if (!orderId || fragmentIndex === undefined || !resolverAddress || !bidAmount) {
-      return res.status(400).json(createErrorResponse(
-        'Order ID, fragment index, resolver address, and bid amount are required'
-      ));
-    }
-    
-    const bid = {
-      orderId,
-      fragmentIndex,
-      resolverAddress,
-      bidAmount,
-      gasPrice: gasPrice || '20000000000', // 20 gwei default
-      executionTime: executionTime || 5000, // 5 seconds default
-      confidence: confidence || 80, // 80% default
-      timestamp: Date.now()
-    };
-    
-    const submitted = resolverManager.submitBid(bid);
-    
-    if (!submitted) {
-      return res.status(400).json(createErrorResponse('Failed to submit bid'));
-    }
-    
-    res.json(createSuccessResponse({ bid, submitted: true }));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to submit bid', getErrorMessage(error)));
-  }
-});
-
-// GET /competitions/:orderId/:fragmentIndex - Get specific competition
-app.get('/competitions/:orderId/:fragmentIndex', async (req, res) => {
-  try {
-    const { orderId, fragmentIndex } = req.params;
-    
-    const competition = resolverManager.getCompetition(orderId, parseInt(fragmentIndex));
-    
-    if (!competition) {
-      return res.status(404).json(createErrorResponse('Competition not found'));
-    }
-    
-    res.json(createSuccessResponse(competition));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get competition', getErrorMessage(error)));
-  }
-});
-
-// GET /order/:orderId/resolver-recommendations - Get resolver recommendations
-app.get('/order/:orderId/resolver-recommendations', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    
-    const recommendations = resolverManager.getResolverRecommendations(orderId);
-    res.json(createSuccessResponse(recommendations));
-  } catch (error) {
-    res.status(500).json(createErrorResponse('Failed to get resolver recommendations', getErrorMessage(error)));
-  }
-});
 
 // Detailed metrics endpoint
 app.get('/metrics', (req, res) => {

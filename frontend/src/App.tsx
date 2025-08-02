@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import BridgeForm from './components/BridgeForm'
-import DutchAuction from './components/DutchAuction'
+
 import TransactionHistory from './components/TransactionHistory'
 
 import { ToastContainer, useToast } from './components/Toast'
@@ -112,15 +112,7 @@ function App() {
     }
   };
 
-  // Dutch Auction state
-  const [auctionData] = useState({
-    initialPrice: 2994.54,
-    endPrice: 2985.12,
-    duration: 300, // 5 minutes
-    startTime: Date.now() / 1000,
-    gasPrice: 25.5,
-    isActive: false
-  });
+
 
   // MetaMask bağlantısı
   const connectMetaMask = async () => {
@@ -391,16 +383,7 @@ function App() {
                 stellarAddress={stellarAddress || ''}
               />
             </div>
-            <div className="space-y-6">
-              <DutchAuction
-                initialPrice={auctionData.initialPrice}
-                endPrice={auctionData.endPrice}
-                duration={auctionData.duration}
-                startTime={auctionData.startTime}
-                gasPrice={auctionData.gasPrice}
-                isActive={auctionData.isActive}
-              />
-            </div>
+
           </div>
         )}
         

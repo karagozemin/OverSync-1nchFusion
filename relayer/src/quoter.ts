@@ -32,7 +32,7 @@ export class QuoterService {
       fee = 0
     } = params;
 
-    // Basic fee calculation (will be enhanced in Phase 2 with Dutch auction)
+    // Basic fee calculation
     const feeRate = RELAYER_CONFIG.fees.feeRate + fee; // basis points
     const dstAmount = calculateDestinationAmount(amount, feeRate);
     

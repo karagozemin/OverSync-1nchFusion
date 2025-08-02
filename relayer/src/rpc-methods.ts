@@ -100,7 +100,7 @@ export interface SecretInfo {
 export interface SubscriptionParams {
   events: EventType[];
   orderHashes?: string[];
-  resolvers?: string[];
+
   chainIds?: number[];
   filterByUrgent?: boolean;
 }
@@ -218,7 +218,7 @@ export class FusionRpcHandler {
       uptime: process.uptime() * 1000,
       version: '1.0.0',
       chainIds: [1, 137], // Ethereum, Polygon
-      features: ['partial_fills', 'dutch_auction', 'merkle_secrets']
+      features: ['partial_fills', 'merkle_secrets']
     };
   }
 
@@ -232,7 +232,7 @@ export class FusionRpcHandler {
       supportedEvents: Object.values(EventType),
       extensions: {
         partialFills: true,
-        dutchAuction: true,
+  
         merkleSecrets: true,
         realTimeEvents: true
       }
@@ -434,7 +434,7 @@ export class FusionRpcHandler {
    * Handle subscribe method
    */
   private handleSubscribe(params: SubscriptionParams, clientId: string): any {
-    const { events, orderHashes, resolvers, chainIds, filterByUrgent } = params;
+    const { events, orderHashes, chainIds, filterByUrgent } = params;
 
     if (!events || !Array.isArray(events)) {
       throw new Error('events array is required');
@@ -451,7 +451,7 @@ export class FusionRpcHandler {
       eventTypes: new Set(validEvents),
       filters: {
         orderHashes: orderHashes ? new Set(orderHashes) : undefined,
-        resolvers: resolvers ? new Set(resolvers) : undefined,
+  
         chainIds: chainIds ? new Set(chainIds) : undefined
       },
       callback: (event) => {
@@ -466,7 +466,7 @@ export class FusionRpcHandler {
       events: validEvents,
       filters: {
         orderHashes: orderHashes || [],
-        resolvers: resolvers || [],
+  
         chainIds: chainIds || []
       }
     };

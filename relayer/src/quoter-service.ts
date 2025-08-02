@@ -3,7 +3,7 @@
  * @description Provides accurate quotes with Dutch auction pricing and gas optimization
  */
 
-import { DutchAuctionCalculator, AuctionConfig } from './dutch-auction.js';
+
 import { gasPriceTracker } from './gas-tracker.js';
 import { getCurrentTimestamp } from './utils.js';
 
@@ -19,7 +19,7 @@ export interface QuoteRequest {
   slippage: number;
   userAddress: string;
   preset?: 'fast' | 'medium' | 'slow';
-  customAuctionConfig?: AuctionConfig;
+
 }
 
 /**
@@ -38,7 +38,7 @@ export interface QuoteResponse {
   estimatedGas: string;
   gasPrice: string;
   executionTime: number;
-  auctionConfig: AuctionConfig;
+
   auctionPricing: {
     startPrice: string;
     currentPrice: string;
@@ -115,15 +115,11 @@ export class QuoterService {
     // Create auction configuration
     const auctionConfig = this.createAuctionConfig(request, gasPrice);
 
-    // Create Dutch auction calculator
-    const auctionCalculator = new DutchAuctionCalculator(
-      auctionConfig,
-      toAmount,
-      gasPrice
-    );
-
-    // Get auction pricing
-    const auctionPricing = auctionCalculator.calculateCurrentPrice();
+    // Calculate pricing (simplified without auction)
+    const currentPrice = toAmount;
+    const finalPrice = toAmount;
+    const auctionProgress = 0;
+    const timeRemaining = 0;
 
     // Calculate fees
     const fee = this.calculateFee(request.amount, request.fromChain, request.toChain);
@@ -144,15 +140,14 @@ export class QuoterService {
       priceImpact: this.calculatePriceImpact(request.amount, toAmount, baseRate, fromTokenPrice.decimals, toTokenPrice.decimals),
       estimatedGas: estimatedGas,
       gasPrice: gasPrice,
-      executionTime: auctionConfig.auctionDuration,
-      auctionConfig,
-      auctionPricing: {
-        startPrice: auctionPricing.currentPrice,
-        currentPrice: auctionPricing.currentPrice,
-        endPrice: auctionPricing.finalPrice,
-        progress: auctionPricing.auctionProgress,
-        timeRemaining: auctionPricing.timeRemaining
-      },
+          executionTime: 300, // Fixed execution time
+          auctionPricing: {
+      startPrice: currentPrice,
+      currentPrice: currentPrice,
+      endPrice: finalPrice,
+      progress: auctionProgress,
+      timeRemaining: timeRemaining
+    },
       fee,
       route: await this.getOptimalRoute(request),
       timestamp: getCurrentTimestamp(),
@@ -181,22 +176,19 @@ export class QuoterService {
       return null;
     }
 
-    // Update auction pricing
-    const auctionCalculator = new DutchAuctionCalculator(
-      quote.auctionConfig,
-      quote.toAmount,
-      quote.gasPrice
-    );
-
-    const auctionPricing = auctionCalculator.calculateCurrentPrice();
+    // Update pricing (simplified without auction)
+    const currentPrice = quote.toAmount;
+    const finalPrice = quote.toAmount;
+    const auctionProgress = 0;
+    const timeRemaining = 0;
 
     // Update quote with new pricing
     quote.auctionPricing = {
       startPrice: quote.auctionPricing.startPrice,
-      currentPrice: auctionPricing.currentPrice,
-      endPrice: auctionPricing.finalPrice,
-      progress: auctionPricing.auctionProgress,
-      timeRemaining: auctionPricing.timeRemaining
+      currentPrice: currentPrice,
+      endPrice: finalPrice,
+      progress: auctionProgress,
+      timeRemaining: timeRemaining
     };
 
     return quote;
@@ -329,53 +321,16 @@ export class QuoterService {
   /**
    * Create auction configuration
    */
-  private createAuctionConfig(request: QuoteRequest, gasPrice: string): AuctionConfig {
-    if (request.customAuctionConfig) {
-      return request.customAuctionConfig;
-    }
-
-    const preset = request.preset || 'medium';
-    const gasRecommendation = gasPriceTracker.getAuctionGasRecommendation(180);
-    
-    const presetConfigs = {
-      fast: {
-        auctionDuration: 120,
-        initialRateBump: 1000,
-        points: [
-          { delay: 12, coefficient: 455 },
-          { delay: 24, coefficient: 300 },
-          { delay: 48, coefficient: 150 }
-        ]
-      },
-      medium: {
-        auctionDuration: 180,
-        initialRateBump: 750,
-        points: [
-          { delay: 18, coefficient: 375 },
-          { delay: 36, coefficient: 250 },
-          { delay: 72, coefficient: 125 }
-        ]
-      },
-      slow: {
-        auctionDuration: 300,
-        initialRateBump: 500,
-        points: [
-          { delay: 30, coefficient: 250 },
-          { delay: 60, coefficient: 150 },
-          { delay: 120, coefficient: 75 }
-        ]
-      }
-    };
-
-    const config = presetConfigs[preset];
+  private createAuctionConfig(request: QuoteRequest, gasPrice: string): any {
+    // Simplified config without auction
     return {
       startTime: getCurrentTimestamp() + 5,
-      auctionDuration: config.auctionDuration,
-      initialRateBump: config.initialRateBump,
-      points: config.points,
+      auctionDuration: 300,
+      initialRateBump: 0,
+      points: [],
       gasCost: {
-        gasBumpEstimate: preset === 'fast' ? 80 : preset === 'medium' ? 60 : 40,
-        gasPriceEstimate: gasRecommendation.averageGasPrice
+        gasBumpEstimate: 0,
+        gasPriceEstimate: gasPrice
       }
     };
   }
