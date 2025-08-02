@@ -35,6 +35,17 @@ function calculateDynamicSafetyDeposit(amountInWei: string | bigint): bigint {
     safetyDepositInEth = Math.min(0.002, amountInEth * 0.01);
   }
   
+  // ✅ CRITICAL: Enforce contract minimum safety deposit (0.01 ETH)
+  const CONTRACT_MIN_SAFETY_DEPOSIT = 0.01; // EscrowFactory.sol requirement
+  const originalSafetyDeposit = safetyDepositInEth;
+  safetyDepositInEth = Math.max(safetyDepositInEth, CONTRACT_MIN_SAFETY_DEPOSIT);
+  
+  console.log(`🛡️ SAFETY DEPOSIT CALCULATION:
+  📊 Amount: ${amountInEth} ETH (~$${amountInUsd.toFixed(2)})
+  💡 Original calculation: ${originalSafetyDeposit} ETH
+  ✅ After contract minimum: ${safetyDepositInEth} ETH
+  📋 Contract requires minimum: ${CONTRACT_MIN_SAFETY_DEPOSIT} ETH`);
+  
   return ethers.parseEther(safetyDepositInEth.toString());
 }
 
@@ -43,8 +54,8 @@ const NETWORK_CONFIG = {
   testnet: {
     ethereum: {
       chainId: 11155111, // Sepolia
-      escrowFactory: '0x6c3818E074d891F1FBB3A75913e4BDe87BcF1123',
-      htlcBridge: '0x3f344ACDd17a0c4D21096da895152820f595dc8A', // Testnet HTLC Bridge
+      escrowFactory: '0x0ABa862Da2F004bCa6ce2990EbC0f77184B6d3a8', // NEW: Fresh EscrowFactory
+      htlcBridge: '0x3f42E2F5D4C896a9CB62D0128175180a288de38A', // NEW: Fresh HTLCBridge
     },
     stellar: {
       networkPassphrase: 'Test SDF Network ; September 2015',
@@ -198,14 +209,9 @@ function shouldUseHTLCContract(networkMode?: string): boolean {
   const config = getNetworkConfig(networkMode);
   const selectedNetwork = networkMode || DEFAULT_NETWORK_MODE;
   
-  // MAINNET: Always use 1inch EscrowFactory (mentor requirement)
-  // HTLC only for Stellar side (non-EVM)
-  if (selectedNetwork === 'mainnet') {
-    return false; // Force 1inch EscrowFactory usage
-  }
-  
-  // TESTNET: Use HTLC contract if available
-  return config.ethereum.htlcBridge !== '0x0000000000000000000000000000000000000000';
+  // ✅ BOTH MAINNET AND TESTNET: Always use EscrowFactory
+  // HTLC only for Stellar side (non-EVM) and XLM→ETH orders
+  return false; // Always use EscrowFactory for ETH→XLM transactions
 }
 
 // Relayer configuration from environment variables
@@ -225,7 +231,9 @@ export const RELAYER_CONFIG = {
   ethereum: {
     network: process.env.ETHEREUM_NETWORK || 'mainnet',
     rpcUrl: process.env.ETHEREUM_RPC_URL || 'https://eth-mainnet.g.alchemy.com/v2/YOUR_MAINNET_API_KEY_HERE',
-    contractAddress: process.env.ESCROW_FACTORY_ADDRESS || '0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a', // 1inch Escrow Factory - API mode
+    // ✅ Dynamic contract addresses based on network
+    contractAddress: getHtlcBridgeAddress(DEFAULT_NETWORK_MODE), // For EthereumEventListener (testnet only)
+    escrowFactoryAddress: getEscrowFactoryAddress(DEFAULT_NETWORK_MODE), // For transactions (mainnet + testnet)
     fusionApiUrl: 'https://api.1inch.dev/fusion',
     fusionApiKey: process.env.ONEINCH_API_KEY || '',
     privateKey: process.env.RELAYER_PRIVATE_KEY || '',
@@ -364,18 +372,33 @@ async function initializeRelayer() {
     console.error('❌ Failed to start monitoring system:', error);
   }
 
-  // Start Ethereum event listener
+  // Start Ethereum event listener (TESTNET ONLY)  
   try {
-    await ethereumListener.startListening();
+    if (DEFAULT_NETWORK_MODE === 'mainnet') {
+      console.log('🏗️ Mainnet mode: Skipping EthereumEventListener (using 1inch EscrowFactory)');
+    } else {
+      console.log('🔄 Testnet mode: Starting EthereumEventListener for HTLCBridge monitoring');
+      await ethereumListener.startListening();
+    }
   } catch (error) {
     console.error('❌ Failed to start Ethereum listener:', error);
-    process.exit(1);
+    // Don't exit on mainnet, only on testnet
+    if (DEFAULT_NETWORK_MODE !== 'mainnet') {
+      process.exit(1);
+    }
   }
   
   // ===== ORDERS API ENDPOINTS =====
   
-  console.log('🌍 USING PUBLIC HTLC BRIDGE CONTRACT:', HTLC_CONTRACT_ADDRESS);
-  console.log('🏭 DEFAULT ESCROW FACTORY CONTRACT:', getEscrowFactoryAddress());
+  // ✅ Network-aware contract logging
+  console.log(`🌐 Network Mode: ${DEFAULT_NETWORK_MODE.toUpperCase()}`);
+  if (DEFAULT_NETWORK_MODE === 'mainnet') {
+    console.log('🏭 MAINNET Escrow Factory:', getEscrowFactoryAddress('mainnet'));
+    console.log('🎯 MAINNET HTLC (XLM→ETH only):', getHtlcBridgeAddress('mainnet'));
+  } else {
+    console.log('🧪 TESTNET HTLC Bridge (Event Listener):', getHtlcBridgeAddress('testnet'));
+    console.log('🧪 TESTNET Escrow Factory:', getEscrowFactoryAddress('testnet'));
+  }
     
   // Global order storage (in production this would be a database)
 const activeOrders = new Map();
@@ -723,7 +746,7 @@ const activeOrders = new Map();
               to: useHTLC ? getHtlcBridgeAddress('mainnet') : getEscrowFactoryAddress('mainnet'),       // Dynamic contract selection
               value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
               data: encodedData,                // Contract call data
-              gas: '0x7A120'                    // 500000 gas limit for contract call
+              gas: '0x30D40'                    // 200000 gas limit for contract call (reduced from 500k)
             },
             message: `🏭 Mainnet: ${useHTLC ? 'HTLC + EscrowFactory' : 'EscrowFactory only'}`,
             nextStep: useHTLC ? 'HTLC Contract çağırın' : '1inch EscrowFactory çağırın',
@@ -775,7 +798,7 @@ const activeOrders = new Map();
           ...orderData,
           ethAddress: normalizedEthAddress,
           stellarAddress,
-          amount,
+          amount: orderData.amount,  // ✅ Use wei format, not decimal string
           exchangeRate: exchangeRate || ETH_TO_XLM_RATE
         });
 
@@ -785,6 +808,7 @@ const activeOrders = new Map();
         // Calculate dynamic safety deposit based on USD value
         const orderAmountBigInt = BigInt(orderData.amount);
         const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount);
+        // ✅ CORRECT: msg.value = user amount + safety deposit (user's ETH gets locked + safety deposit)
         const totalCost = orderAmountBigInt + actualSafetyDeposit;
         
         // Create EscrowConfig struct (ESKİ testnet yapısı)
@@ -815,7 +839,7 @@ const activeOrders = new Map();
             to: getEscrowFactoryAddress(requestNetwork),       // Dynamic EscrowFactory (testnet)
             value: `0x${totalCost.toString(16)}`,  // Order amount + safety deposit
             data: encodedData,                // createEscrow call with config
-            gas: '0x7A120'                    // 500000 gas limit for complex contract call
+            gas: '0x2DC6C0'                   // 3000000 gas limit for large contract deployment (HTLCBridge ~639 lines)
           },
           message: '🏭 TESTNET: ESKİ custom EscrowFactory createEscrow',
           nextStep: 'EscrowFactory createEscrow çağırın',

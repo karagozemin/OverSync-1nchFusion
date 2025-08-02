@@ -22,7 +22,8 @@ const config: HardhatUserConfig = {
       chainId: 1337,
     },
     sepolia: {
-      url: process.env.ETHEREUM_RPC_URL || "https://sepolia.infura.io/v3/your-key",
+      url: process.env.SEPOLIA_RPC_URL || "https://eth-sepolia.g.alchemy.com/v2/YOUR_SEPOLIA_API_KEY_HERE",
+      chainId: 11155111,
       accounts: process.env.RELAYER_PRIVATE_KEY ? [process.env.RELAYER_PRIVATE_KEY] : [],
     },
     mainnet: {
