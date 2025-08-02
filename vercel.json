@@ -1,7 +1,7 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "buildCommand": "cd frontend && pnpm install --frozen-lockfile=false && pnpm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "echo 'Skipping root install'",
+  "installCommand": "npm install -g pnpm",
   "framework": "vite",
   "rewrites": [
     {
