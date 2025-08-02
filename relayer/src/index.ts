@@ -15,36 +15,49 @@ import { ethers } from 'ethers';
 // Load environment variables from root directory
 config({ path: resolve(process.cwd(), '../.env') });
 
-// Dynamic Safety Deposit Helper Function
-function calculateDynamicSafetyDeposit(amountInWei: string | bigint): bigint {
+// ✅ NETWORK-AWARE Dynamic Safety Deposit Helper Function
+function calculateDynamicSafetyDeposit(amountInWei: string | bigint, networkMode?: string): bigint {
   const ETH_USD_PRICE = 3500; // $3500 per ETH
   const amountInEth = parseFloat(ethers.formatEther(amountInWei.toString()));
   const amountInUsd = amountInEth * ETH_USD_PRICE;
   
+  // ✅ Your preferred dynamic calculation
   let safetyDepositInEth: number;
-  if (amountInUsd < 50) {
-    safetyDepositInEth = 0.00005; // $50 altı → 0.00005 ETH
-  } else if (amountInUsd < 100) {
-    safetyDepositInEth = 0.0001;  // $50–100 → 0.0001 ETH
-  } else if (amountInUsd < 500) {
-    safetyDepositInEth = 0.0002;  // $100–500 → 0.0002 ETH
-  } else if (amountInUsd < 1000) {
-    safetyDepositInEth = 0.0005;  // $500–1000 → 0.0005 ETH
+  if (amountInUsd <= 50) {
+    safetyDepositInEth = 0.00005; // min
+  } else if (amountInUsd <= 100) {
+    safetyDepositInEth = 0.0001;
+  } else if (amountInUsd <= 500) {
+    safetyDepositInEth = 0.0002;
+  } else if (amountInUsd <= 1000) {
+    safetyDepositInEth = 0.0005;
   } else {
-    // $1000 üzeri → Math.min(0.002, amountInEth * 0.01)
-    safetyDepositInEth = Math.min(0.002, amountInEth * 0.01);
+    safetyDepositInEth = Math.min(0.002, amountInEth * 0.01); // max cap
   }
   
-  // ✅ CRITICAL: Enforce contract minimum safety deposit (0.01 ETH)
-  const CONTRACT_MIN_SAFETY_DEPOSIT = 0.01; // EscrowFactory.sol requirement
   const originalSafetyDeposit = safetyDepositInEth;
-  safetyDepositInEth = Math.max(safetyDepositInEth, CONTRACT_MIN_SAFETY_DEPOSIT);
   
-  console.log(`🛡️ SAFETY DEPOSIT CALCULATION:
-  📊 Amount: ${amountInEth} ETH (~$${amountInUsd.toFixed(2)})
-  💡 Original calculation: ${originalSafetyDeposit} ETH
-  ✅ After contract minimum: ${safetyDepositInEth} ETH
-  📋 Contract requires minimum: ${CONTRACT_MIN_SAFETY_DEPOSIT} ETH`);
+  // ✅ NETWORK-AWARE CONTRACT MINIMUMS
+  const isTestnet = networkMode === 'testnet' || DEFAULT_NETWORK_MODE === 'testnet';
+  
+  if (isTestnet) {
+    // TESTNET: Enforce 0.01 ETH minimum (EscrowFactory.sol requirement)
+    const TESTNET_MIN_SAFETY_DEPOSIT = 0.01;
+    safetyDepositInEth = Math.max(safetyDepositInEth, TESTNET_MIN_SAFETY_DEPOSIT);
+    
+    console.log(`🛡️ TESTNET SAFETY DEPOSIT:
+    📊 Amount: ${amountInEth} ETH (~$${amountInUsd.toFixed(2)})
+    💡 Dynamic calculation: ${originalSafetyDeposit} ETH
+    ✅ Testnet minimum applied: ${safetyDepositInEth} ETH
+    📋 Testnet requires minimum: ${TESTNET_MIN_SAFETY_DEPOSIT} ETH`);
+  } else {
+    // MAINNET: Use pure dynamic calculation (no forced minimum)
+    console.log(`🛡️ MAINNET SAFETY DEPOSIT:
+    📊 Amount: ${amountInEth} ETH (~$${amountInUsd.toFixed(2)})
+    💡 Dynamic calculation: ${originalSafetyDeposit} ETH
+    ✅ Final amount (no forced minimum): ${safetyDepositInEth} ETH
+    🎯 Mainnet uses dynamic tiers only`);
+  }
   
   return ethers.parseEther(safetyDepositInEth.toString());
 }
@@ -661,8 +674,8 @@ const activeOrders = new Map();
           hashLock: hashLock
         });
         
-        // Calculate dynamic safety deposit
-        const actualSafetyDeposit = calculateDynamicSafetyDeposit(userAmountWei);
+        // Calculate dynamic safety deposit with network awareness
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(userAmountWei, requestNetwork);
         
         const amountInEth = parseFloat(ethers.formatEther(userAmountWei));
         const amountInUsd = amountInEth * ethUsdPrice; // Use real ETH price
@@ -810,9 +823,9 @@ const activeOrders = new Map();
         console.log('✅ TESTNET ETH→XLM Order created:', orderId);
         console.log('🏭 TESTNET ESKİ ESCROW MODE: User → createEscrow (bizim custom contract)');
         
-        // Calculate dynamic safety deposit based on USD value
+        // Calculate dynamic safety deposit based on USD value with network awareness
         const orderAmountBigInt = BigInt(orderData.amount);
-        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount);
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount, requestNetwork);
         // ✅ CORRECT: msg.value = user amount + safety deposit (user's ETH gets locked + safety deposit)
         const totalCost = orderAmountBigInt + actualSafetyDeposit;
         
@@ -2122,16 +2135,17 @@ const activeOrders = new Map();
       try {
         console.log(`🏭 Creating escrow for order ${orderId}...`);
         
-        // Calculate dynamic safety deposit for this escrow
+        // Calculate dynamic safety deposit for this escrow with network awareness
         const orderAmountBigInt = BigInt(orderData.amount);
-        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount);
+        const orderNetworkMode = orderData.networkMode || DEFAULT_NETWORK_MODE;
+        const actualSafetyDeposit = calculateDynamicSafetyDeposit(orderData.amount, orderNetworkMode);
         
         const totalValue = orderAmountBigInt + actualSafetyDeposit;
         const contractWithSigner = contract.connect(wallet) as any;
         let tx;
         
         // Dinamik method selection - Mainnet vs Testnet
-        const isMainnetRequest = DEFAULT_NETWORK_MODE === 'mainnet';
+        const isMainnetRequest = orderNetworkMode === 'mainnet';
         
         if (isMainnetRequest) {
                   // MAINNET: Use createDstEscrow (1inch cross-chain resolver pattern)
