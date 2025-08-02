@@ -24,7 +24,7 @@ interface BridgeFormProps {
   stellarAddress: string;
 }
 
-// Sabit token bilgileri
+  // Fixed token information
 const ETH_TOKEN = {
   symbol: 'ETH',
   name: 'Ethereum',
@@ -41,7 +41,7 @@ const XLM_TOKEN = {
   decimals: 7
 };
 
-// Sabit kur oranı (gerçek uygulamada API'den alınacak)
+  // Fixed exchange rate (in real application, this would be fetched from API)
 const ETH_TO_XLM_RATE = 10000; // 1 ETH = 10,000 XLM
 
 // Network configuration
@@ -805,7 +805,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           });
           
           // Update status to cross-chain processing
-          setStatusMessage('Köprüleniyor...');
+          setStatusMessage('Bridging...');
           
           // Show success with transaction hash
           setOrderId(txHash);
@@ -863,7 +863,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               updateTransactionStatus(result.orderId, 'completed');
               
               // Update status to completed (development mode)
-              setStatusMessage('Tamamlandı ✅');
+              setStatusMessage('Completed ✅');
               setIsSubmitting(false);
               
               // Show success anyway for development
@@ -880,7 +880,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             updateTransactionStatus(result.orderId, 'completed');
             
             // Update status to completed (development mode)
-            setStatusMessage('Tamamlandı ✅');
+            setStatusMessage('Completed ✅');
             setIsSubmitting(false);
             
             // Show success anyway for development
@@ -907,7 +907,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           console.error('❌ Approval transaction failed:', txError);
           
           // Update status to failed
-          setStatusMessage('Başarısız ❌');
+          setStatusMessage('Failed ❌');
           setIsSubmitting(false);
           
           console.error('🔍 Full error details:', {
@@ -1059,11 +1059,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               }
               
               // Update status to failed
-              setStatusMessage('ETH gönderimi başarısız ❌');
+              setStatusMessage('ETH sending failed ❌');
               setIsSubmitting(false);
               
               // Show error to user
-              alert(`ETH gönderimi başarısız: ${processResponse.status} - ${errorData}`);
+              alert(`ETH sending failed: ${processResponse.status} - ${errorData}`);
             }
           } catch (processError: any) {
             console.error('❌ ETH release network error:', processError);
@@ -1074,14 +1074,14 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             });
             
             // Update status to failed
-            setStatusMessage('Ağ hatası ❌');
+                          setStatusMessage('Network error ❌');
             setIsSubmitting(false);
             
             // Update transaction status to failed
             updateTransactionStatus(result.orderId, 'failed');
             
             // Show error to user  
-            alert(`ETH gönderimi ağ hatası: ${processError.message}`);
+                          alert(`ETH sending network error: ${processError.message}`);
           }
 
         } catch (stellarError: any) {

@@ -2993,7 +2993,7 @@ app.post('/presets/optimize', async (req, res) => {
       res.status(500).json({
         success: false,
         error: getErrorMessage(error),
-        message: 'EscrowFactory test başarısız'
+        message: 'EscrowFactory test failed'
       });
     }
   });

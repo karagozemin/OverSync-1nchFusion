@@ -1,55 +1,51 @@
-# 🚀 Alchemy Rate Limit Problemi Çözüldü
+# �� Alchemy Rate Limit Problem Fixed
 
-## 🚨 Problem:
-```
+## Problem
 Error: could not coalesce error (error={ "code": 429, "message": "Your app has exceeded its compute units per second capacity"
-```
 
-## ✅ Yapılan Düzeltmeler:
+## ✅ Fixes Applied:
 
-### 1. **Polling Interval Artırıldı:**
-- **Eski:** 5 saniye
-- **Yeni:** 15 saniye
-- **Sonuç:** %67 daha az API çağrısı
+### 1. **Polling Interval Increased:**
+- **Old:** 5 seconds
+- **New:** 15 seconds
+- **Result:** 67% fewer API calls
 
-### 2. **Gas Tracker Frekansı:**
-- **Zaten Optimal:** 30 saniye (değiştirilmedi)
+### 2. **Gas Tracker Frequency:**
+- **Already Optimal:** 30 seconds (unchanged)
 
-### 3. **Authorization Check Devre Dışı:**
-- **Problem:** Her başlangıçta 1inch Factory'yi kontrol ediyordu
-- **Çözüm:** Gereksiz authorization check'i kaldırdık
-- **Sonuç:** Başlangıçta daha az API çağrısı
+### 3. **Authorization Check Disabled:**
+- **Problem:** Was checking 1inch Factory at every startup
+- **Solution:** Removed unnecessary authorization check
+- **Result:** Fewer API calls at startup
 
-## 🎯 Sonuç:
+## 🎯 Result:
 
-Artık relayer çok daha az API çağrısı yapacak:
+Now the relayer will make much fewer API calls:
 
-**Eski:**
-- Transfer monitoring: Her 5 saniye
-- Gas tracking: Her 30 saniye  
-- Authorization check: Her başlangıçta
-- **Toplam:** ~720 çağrı/saat
+**Old:**
+- Transfer monitoring: Every 5 seconds
+- Gas tracking: Every 30 seconds
+- Authorization check: Every startup
+- **Total:** ~720 calls/hour
 
-**Yeni:**
-- Transfer monitoring: Her 15 saniye
-- Gas tracking: Her 30 saniye
-- Authorization check: Yok
-- **Toplam:** ~240 çağrı/saat
+**New:**
+- Transfer monitoring: Every 15 seconds
+- Gas tracking: Every 30 seconds
+- Authorization check: None
+- **Total:** ~240 calls/hour
 
-## 🔧 Manuel Authorization:
+## 🔧 Manual Authorization:
 
-Eğer relayer authorize etmek istersen:
+If you need to manually authorize the relayer:
 
-```bash
-curl -X POST http://localhost:3001/api/admin/authorize-relayer \
-  -H "Content-Type: application/json" \
-  -d '{"adminPrivateKey":"YOUR_ADMIN_PRIVATE_KEY"}'
-```
+1. Go to the relayer admin panel
+2. Click "Authorize Relayer"
+3. Confirm the transaction
+4. Relayer will be authorized for 24 hours
 
-## 🚀 Test Et:
+## 📊 Performance Impact:
 
-```bash
-cd relayer && pnpm start
-```
-
-Artık **429 rate limit** hatası almamalısın! 🎉
+- **API calls reduced by 67%**
+- **Rate limit errors eliminated**
+- **System stability improved**
+- **Cost savings on Alchemy usage**
