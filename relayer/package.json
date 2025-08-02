@@ -13,8 +13,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@oversync/contracts": "workspace:*",
-    "@oversync/stellar": "workspace:*",
     "@stellar/stellar-sdk": "^11.3.0",
     "axios": "^1.10.0",
     "dotenv": "^16.3.0",
