@@ -252,6 +252,8 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
       const currentNetwork = getCurrentNetwork();
       const isTestnetMode = isTestnet();
       
+      console.log('🔄 Updating network info:', { isTestnetMode, network: currentNetwork.ethereum.displayName });
+      
       setNetworkInfo({
         isTestnet: isTestnetMode,
         ethereum: currentNetwork.ethereum,
@@ -263,9 +265,21 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     // Update immediately
     updateNetworkInfo();
 
-    // Listen for network changes
+    // Listen for URL changes (network parameter)
+    const handleUrlChange = () => {
+      updateNetworkInfo();
+    };
+
+    // Listen for popstate (browser back/forward)
+    window.addEventListener('popstate', handleUrlChange);
+    
+    // Listen for network changes every second
     const interval = setInterval(updateNetworkInfo, 1000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      clearInterval(interval);
+    };
   }, []);
   const [amount, setAmount] = useState('');
   const [estimatedAmount, setEstimatedAmount] = useState('');
@@ -530,8 +544,11 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     try {
       // Check network and switch if needed
       console.log('🔗 Checking network...');
+      console.log('🔗 Expected network info:', networkInfo);
+      
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       console.log('🔗 Current chain ID:', chainId);
+      console.log('🔗 Expected chain ID:', networkInfo.expectedChainId);
       
       if (chainId !== networkInfo.expectedChainId) {
         const networkName = networkInfo.isTestnet ? 'Sepolia Testnet' : 'Ethereum Mainnet';
@@ -542,7 +559,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: networkInfo.expectedChainId }],
           });
+          console.log(`✅ Successfully switched to ${networkName}`);
         } catch (switchError: any) {
+          console.log('🔄 Network switch error:', switchError);
           if (switchError.code === 4902) {
             // Network not added yet
             const networkConfig = networkInfo.isTestnet ? {
@@ -571,10 +590,17 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               method: 'wallet_addEthereumChain',
               params: [networkConfig],
             });
+            console.log(`✅ Successfully added and switched to ${networkName}`);
           } else {
-            throw switchError;
+            console.error('❌ Network switch failed:', switchError);
+            alert(`Please switch MetaMask to ${networkName} manually and try again.`);
+            setIsSubmitting(false);
+            setStatusMessage('');
+            return;
           }
         }
+      } else {
+        console.log('✅ Network is already correct');
       }
 
       // Create order request (used by both testnet and mainnet)
