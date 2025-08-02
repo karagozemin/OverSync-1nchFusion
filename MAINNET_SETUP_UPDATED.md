@@ -1,51 +1,59 @@
-# ✅ Mainnet Setup - 1inch deploySrc Approach
+✅ Mainnet Setup – 1inch deploySrc Approach
+🚀 Problem Solved
+Previous Issue: MetaMask showed “transaction will fail” — and it actually did fail.
 
-## 🚀 Problem Çözüldü
+Cause: We were using the wrong method. Instead of the 1inch Fusion API, we should’ve used the deploySrc method.
 
-**Eski Problem:** MetaMask "transaction will fail" diyordu ve gerçekten başarısız oluyordu.
+✅ Correct Solution: 1inch Cross-Chain Resolver Pattern
+We now use the deploySrc method as your mentor advised:
 
-**Sebep:** Yanlış yaklaşım kullanıyorduk - 1inch Fusion API yerine **deploySrc metodunu** kullanmamız gerekiyordu.
+🏭 New Flow:
+User initiates an ETH → XLM swap
 
-## ✅ Doğru Çözüm: 1inch Cross-Chain Resolver Pattern
+Relayer prepares deploySrc parameters:
 
-Mentorunuzun önerdiği şekilde **deploySrc** metodunu kullanıyoruz:
+hashLock (for HTLC)
 
-### 🏭 Yeni Akış:
+timelock (e.g. 2 hours)
 
-1. **Kullanıcı ETH → XLM swap başlatır**
-2. **Relayer `deploySrc` parametrelerini hazırlar:**
-   - hashLock (HTLC için)
-   - timelock (2 saat)
-   - safetyDeposit (%2 + minimum 0.001 ETH)
-3. **Kullanıcı MetaMask'ta `deploySrc` çağırır** ✅ (artık başarısız olmaz!)
-4. **1inch Escrow Factory'de escrow yaratılır**
-5. **Relayer Stellar tarafında XLM gönderir**
-6. **Cross-chain atomic swap tamamlanır** 🎉
+safetyDeposit (2% + min 0.001 ETH)
 
-## 📋 Yapılan Değişiklikler:
+User calls deploySrc via MetaMask ✅ (won’t fail now!)
 
-### ❌ Silinen Kısımlar:
-- ❌ `fusion-api.ts` dosyası → Silindi
-- ❌ 1inch Fusion API entegrasyonu → Kaldırıldı
-- ❌ Fusion order monitoring → Temizlendi
-- ❌ Dutch auction yaklaşımı → Artık gerek yok
+Escrow is created through 1inch Escrow Factory
 
-### ✅ Eklenen Kısımlar:
-- ✅ **`deploySrc` metodu** → 1inch Escrow Factory ile
-- ✅ **HTLC parametreleri** → hashLock, timelock, secret
-- ✅ **Safety deposit hesaplama** → %2 + minimum 0.001 ETH
-- ✅ **Cross-chain bridge logic** → Ethereum → Stellar
-- ✅ **Escrow processing** → processEscrowToStellar
+Relayer transfers XLM on the Stellar side
 
-## 🔑 Environment Variables (Değişmedi)
+Cross-chain atomic swap is completed 🎉
 
-`.env` dosyanızda bunlar yeterli:
+📋 Changes Made
+❌ Removed:
+❌ fusion-api.ts → deleted
 
-```bash
+❌ 1inch Fusion API integration → removed
+
+❌ Fusion order monitoring → removed
+
+❌ Dutch auction logic → no longer needed
+
+✅ Added:
+✅ deploySrc method → via 1inch Escrow Factory
+
+✅ HTLC parameters → hashLock, timelock, secret
+
+✅ Safety deposit logic → 2% + 0.001 ETH
+
+✅ Cross-chain logic → Ethereum → Stellar
+
+✅ Escrow processing → processEscrowToStellar
+
+🔑 Environment Variables (Unchanged)
+Your .env should include:
+
 # Network
 NETWORK_MODE=mainnet
 
-# 1inch API Key (hala gerekli bazı endpoint'ler için)
+# 1inch API Key (still required for some endpoints)
 ONEINCH_API_KEY=your_1inch_api_key_here
 
 # Stellar
@@ -53,49 +61,59 @@ RELAYER_STELLAR_SECRET=your_stellar_secret_key_here
 
 # Ethereum  
 RELAYER_PRIVATE_KEY=your_ethereum_private_key_here
-```
 
-## 🎯 Contract Adresleri:
+🎯 Contract Addresses:
+✅ 1inch Escrow Factory: 0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a
 
-- **✅ 1inch Escrow Factory:** `0xa7bcb4eac8964306f9e3764f67db6a7af6ddf99a`
-- **✅ Method:** `deploySrc(token, amount, hashLock, timelock, dstChainId, dstToken)`
+✅ Method: deploySrc(token, amount, hashLock, timelock, dstChainId, dstToken)
 
-## 🔄 Yeni API Endpoints:
+🔄 New API Endpoints:
+❌ /api/fusion/* → removed
 
-- ❌ `/api/fusion/*` → Kaldırıldı
-- ✅ `/api/escrow/info` → Escrow factory bilgileri
-- ✅ `/api/orders/create` → deploySrc kullanır
-- ✅ `/api/orders/process` → Escrow processing
+✅ /api/escrow/info → get Escrow Factory info
 
-## 📊 Order Status'lar:
+✅ /api/orders/create → uses deploySrc
 
-- `pending_escrow_deployment` → Kullanıcı deploySrc çağırıyor
-- `escrow_deployed` → Escrow yaratıldı, Stellar işlemi başlıyor
-- `processing_stellar_transfer` → XLM gönderiliyor
-- `completed` → İşlem tamamlandı ✅
+✅ /api/orders/process → handles escrow to Stellar
 
-## ✅ Ana Gereksinimler Karşılandı:
+📊 Order Status Flow:
+pending_escrow_deployment → waiting for user to call deploySrc
 
-1. **✅ "Use 1inch escrow contracts for the EVM side"**
-   - Artık gerçek 1inch Escrow Factory kullanıyor
-   - `deploySrc` metoduyla doğru pattern
-   
-2. **✅ "HTLCs on the non-EVM side"**
-   - Stellar tarafında HTLC mantığı korunuyor
-   - Atomic cross-chain swaps
+escrow_deployed → escrow created, Stellar tx begins
 
-## 🚀 Test Etmek İçin:
+processing_stellar_transfer → sending XLM
 
-1. **Relayer'ı başlat:** `cd relayer && npm start`
-2. **Frontend'i başlat:** `cd frontend && npm run dev`
-3. **Mainnet'te ETH → XLM swap dene**
-4. **MetaMask'ta deploySrc transaction'ı onayla** ✅
+completed → swap completed ✅
 
-## 🎉 Sonuç:
+✅ Core Requirements Fulfilled:
+✅ “Use 1inch escrow contracts on the EVM side”
 
-Artık sistem **tam olarak mentorunuzun önerdiği şekilde** çalışıyor:
-- ✅ **"deploySrc for the source chain"**
-- ✅ **"Creates escrow and deposits safety deposit"** 
-- ✅ **"Use relayer service to manage secrets"**
+Now using the official 1inch Escrow Factory
 
-**MetaMask artık transaction failed demeyecek!** 🚀
+Follows the correct pattern via deploySrc
+
+✅ “HTLCs on the non-EVM side”
+
+HTLC logic preserved on Stellar
+
+Enables atomic cross-chain swaps
+
+🚀 To Test:
+Start relayer: cd relayer && npm start
+
+Start frontend: cd frontend && npm run dev
+
+Try an ETH → XLM swap on mainnet
+
+Confirm the deploySrc tx in MetaMask ✅
+
+🎉 Result:
+The system now works exactly as your mentor advised:
+
+✅ Use deploySrc on source chain
+
+✅ Create escrow and deposit safety collateral
+
+✅ Relayer handles secrets & finalization
+
+No more "transaction failed" in MetaMask! 🚀

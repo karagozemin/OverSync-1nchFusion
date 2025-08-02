@@ -1,17 +1,28 @@
 # 🌉 OverSync
 
-> Cross-chain token bridge between Ethereum and Stellar using Fusion+ architecture with HTLC mechanism
+> **Cross-chain token bridge between Ethereum and Stellar using 1inch Fusion+ architecture with HTLC mechanism**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-8+-orange.svg)](https://pnpm.io/)
+
+---
+
+🎬 **Demo Video**: [Watch on YouTube](https://www.youtube.com/watch?v=DEMO_VIDEO_LINK)
+
+🌐 **Live App**: [https://oversync.vercel.app](https://oversync.vercel.app)
 
 Built for **ETHGlobal Unite Hackathon** - Extending 1inch Fusion+ to support Stellar blockchain.
 
 ## 🎯 Overview
 
-FusionBridge enables **secure, trustless token swaps** between Ethereum and Stellar networks using:
+OverSync enables **secure, trustless token swaps** between Ethereum and Stellar networks using:
 
 - **HTLC (Hash Time Lock Contracts)** for atomic swaps
-- **Fusion+ architecture** adapted for cross-chain operations
+- **1inch Fusion+ architecture** adapted for cross-chain operations
 - **1inch Escrow Factory** integration for mainnet operations
 - **Automated relayer service** for seamless user experience
+- **Real-time exchange rates** via CoinGecko API
 - **Partial fill support** for flexible swap amounts
 
 ### 🌐 Network Support
@@ -33,6 +44,17 @@ FusionBridge enables **secure, trustless token swaps** between Ethereum and Stel
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
+### ⚙️ Dual Contract Approach
+
+OverSync uses different contract setups depending on the network:
+
+| Environment | EVM Side                     | Non-EVM Side       |
+|-------------|------------------------------|---------------------|
+| **Mainnet** | ✅ Official 1inch Escrow Factory (`deploySrc`) | ✅ Stellar HTLC (Claimable Balance) |
+| **Testnet** | ✅ Custom Escrow Factory (Sepolia)             | ✅ Stellar HTLC (Claimable Balance) |
+
+> ℹ️ 1inch does not provide a testnet deployment of their Escrow Factory, so we use a custom implementation for Sepolia during testing.
+
 ### Swap Flow
 
 1. **User locks tokens** on source chain (Ethereum or Stellar) with hash + timeout
@@ -44,7 +66,7 @@ FusionBridge enables **secure, trustless token swaps** between Ethereum and Stel
 ## 📁 Project Structure
 
 ```
-fusionbridge/
+oversync/
 ├── contracts/          # Ethereum smart contracts (Solidity + Hardhat)
 │   ├── contracts/      # HTLC and bridge contracts
 │   ├── scripts/        # Deployment scripts
@@ -73,11 +95,11 @@ fusionbridge/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/fusionbridge.git
-cd fusionbridge
+git clone https://github.com/your-username/oversync.git
+cd oversync
 
 # Setup environment variables
-cp env.template .env
+cp env.example .env
 # Edit .env with your actual configuration values
 
 # Install dependencies for all workspaces
@@ -90,7 +112,7 @@ Before running the project, you need to configure environment variables:
 
 1. **Copy the environment template:**
    ```bash
-   cp env.template .env
+   cp env.example .env
    ```
 
 2. **Edit `.env` with your configuration:**
@@ -112,11 +134,11 @@ Before running the project, you need to configure environment variables:
    RELAYER_STELLAR_SECRET=S[your-stellar-secret-key]
    
    # 1inch API (required for mainnet)
-ONEINCH_API_KEY=your_1inch_api_key_here
+   ONEINCH_API_KEY=your_1inch_api_key_here
    
    # Optional API keys:
    ETHERSCAN_API_KEY=YOUR_ETHERSCAN_API_KEY
-   VITE_WALLET_CONNECT_PROJECT_ID=YOUR_WALLET_CONNECT_PROJECT_ID
+   ALCHEMY_API_KEY=YOUR_ALCHEMY_API_KEY
    ```
 
 3. **Key Generation (for testnet):**
@@ -131,7 +153,7 @@ ONEINCH_API_KEY=your_1inch_api_key_here
 
 ## 🧪 Network Setup
 
-FusionBridge supports both testnet and mainnet operations:
+OverSync supports both testnet and mainnet operations:
 
 ### 🚀 Quick Network Switch
 
@@ -179,7 +201,7 @@ You can switch networks in two ways:
    ```bash
    NETWORK_MODE=mainnet
    MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
-ONEINCH_API_KEY=your_1inch_api_key_here
+   ONEINCH_API_KEY=your_1inch_api_key_here
    ```
 
 2. **Funded Wallets:**
@@ -210,11 +232,11 @@ ONEINCH_API_KEY=your_1inch_api_key_here
 1. **Install MetaMask**: https://metamask.io/
 2. **Install Freighter**: https://freighter.app/
 3. **Fund both wallets** with testnet tokens
-4. **Connect both wallets** in the FusionBridge UI
+4. **Connect both wallets** in the OverSync UI
 
 > 💡 **Pro tip**: The app shows a testnet banner with direct faucet links when running on testnet networks.
 
-### Development
+## 🚀 Development
 
 ```bash
 # Start all services in development mode
@@ -226,7 +248,7 @@ pnpm relayer:start     # Start relayer service
 pnpm contracts:compile # Compile smart contracts
 ```
 
-### Build
+## 🔧 Build
 
 ```bash
 # Build all workspaces
@@ -240,7 +262,7 @@ pnpm frontend:build
 
 ## 🔧 Workspace Details
 
-### 📜 Contracts (`@fusionbridge/contracts`)
+### 📜 Contracts (`@oversync/contracts`)
 
 Ethereum smart contracts implementing HTLC functionality:
 
@@ -255,7 +277,7 @@ pnpm test                      # Run tests
 pnpm deploy:sepolia            # Deploy to Sepolia testnet
 ```
 
-### ⭐ Stellar (`@fusionbridge/stellar`)
+### ⭐ Stellar (`@oversync/stellar`)
 
 Stellar blockchain operations using stellar-sdk:
 
@@ -269,7 +291,7 @@ pnpm build                     # Build TypeScript
 pnpm test                      # Run integration tests
 ```
 
-### 🔄 Relayer (`@fusionbridge/relayer`)
+### 🔄 Relayer (`@oversync/relayer`)
 
 Event monitoring and cross-chain coordination:
 
@@ -283,7 +305,7 @@ pnpm dev                       # Start in development mode
 pnpm start                     # Start production build
 ```
 
-### 🖥️ Frontend (`@fusionbridge/frontend`)
+### 🖥️ Frontend (`@oversync/frontend`)
 
 React-based user interface:
 

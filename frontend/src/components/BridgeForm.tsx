@@ -7,7 +7,7 @@ import {
   TransactionBuilder, 
   Memo
 } from '@stellar/stellar-sdk';
-import { isTestnet, getCurrentNetwork, getContractAddresses } from '../config/networks';
+import { isTestnet, getCurrentNetwork } from '../config/networks';
 
 // Web3 imports for contract interaction
 declare global {
@@ -236,14 +236,12 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const [direction, setDirection] = useState<'eth_to_xlm' | 'xlm_to_eth'>('eth_to_xlm');
   const [networkInfo] = useState(() => {
     const currentNetwork = getCurrentNetwork();
-    const contractAddresses = getContractAddresses();
     const isTestnetMode = isTestnet();
     
     return {
       isTestnet: isTestnetMode,
       ethereum: currentNetwork.ethereum,
       stellar: currentNetwork.stellar,
-      contracts: contractAddresses,
       expectedChainId: isTestnetMode ? SEPOLIA_CHAIN_ID : MAINNET_CHAIN_ID
     };
   });
