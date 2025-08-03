@@ -57,8 +57,8 @@ OverSync uses different contract setups depending on the network:
 
 | Environment | EVM Side                     | Non-EVM Side       |
 |-------------|------------------------------|---------------------|
-| **Mainnet** | ✅ Official 1inch Escrow Factory (`deploySrc`) | ✅ Stellar HTLC (Claimable Balance) |
-| **Testnet** | ✅ Custom Escrow Factory (Sepolia)             | ✅ Stellar HTLC (Claimable Balance) |
+| **Mainnet** | ✅ Official 1inch Escrow Factory | ✅ Stellar HTLC (Claimable Balance) |
+| **Testnet** | ✅ Custom Escrow Factory (Sepolia) | ✅ Stellar HTLC (Claimable Balance) |
 
 > ℹ️ 1inch does not provide a testnet deployment of their Escrow Factory, so we use a custom implementation for Sepolia during testing.
 
