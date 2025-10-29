@@ -788,7 +788,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               });
               
               if (!receipt) {
-                console.log(`⏳ Waiting for confirmation... (${attempts + 1}/${maxAttempts})`);
+                // Only log every 10 attempts to reduce spam
+                if ((attempts + 1) % 10 === 0 || attempts === 0) {
+                  console.log(`⏳ Waiting for confirmation... (${attempts + 1}/${maxAttempts})`);
+                }
                 await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
                 attempts++;
               } else {
