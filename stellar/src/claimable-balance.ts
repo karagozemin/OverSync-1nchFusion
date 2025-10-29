@@ -479,13 +479,6 @@ export class StellarHTLCManager {
   }
 
   /**
-   * Generate mock claimable balance ID for development
-   */
-  private generateMockBalanceId(): string {
-    return crypto.randomBytes(36).toString('hex');
-  }
-
-  /**
    * Extract claimable balance ID from transaction response
    * @param response Stellar transaction response
    * @returns Claimable balance ID
@@ -519,12 +512,11 @@ export class StellarHTLCManager {
         }
       }
     } catch (error) {
-      console.warn('⚠️ Error parsing transaction response:', error);
+      console.error('❌ Error parsing transaction response:', error);
     }
     
-    // Fallback: generate a mock ID for development
-    console.warn('⚠️ Could not extract claimable balance ID from response, using fallback');
-    return this.generateMockBalanceId();
+    // No fallback - throw error if balance ID cannot be extracted
+    throw new Error('Failed to extract claimable balance ID from transaction response. This is a critical error - transaction may have failed or response format is invalid.');
   }
 }
 

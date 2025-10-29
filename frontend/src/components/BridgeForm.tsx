@@ -52,8 +52,6 @@ const fetchCryptoPrices = async (currentInterval: number, rateLimitCount: number
   setUpdateInterval: (interval: number) => void, setRateLimitCount: (count: number) => void, 
   setLastRateLimitTime: (time: Date | null) => void) => {
   try {
-    console.log('💱 Fetching real-time crypto prices...');
-    
     const response = await fetch(
       'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,stellar&vs_currencies=usd'
     );
@@ -62,9 +60,6 @@ const fetchCryptoPrices = async (currentInterval: number, rateLimitCount: number
     if (response.status === 429) {
       const newRateLimitCount = rateLimitCount + 1;
       const newInterval = Math.min(currentInterval * 2, 60000); // Max 60 seconds
-      
-      console.warn(`⚠️ Rate limited! Increasing interval: ${currentInterval}ms → ${newInterval}ms`);
-      console.warn(`   Rate limit count: ${newRateLimitCount}`);
       
       setRateLimitCount(newRateLimitCount);
       setLastRateLimitTime(new Date());
@@ -97,10 +92,10 @@ const fetchCryptoPrices = async (currentInterval: number, rateLimitCount: number
     // Calculate ETH to XLM rate: 1 ETH = how many XLM
     const ethToXlmRate = ethPrice / xlmPrice;
     
-    console.log('💱 Real-time prices:');
-    console.log(`   ETH: $${ethPrice}`);
-    console.log(`   XLM: $${xlmPrice}`);
-    console.log(`   Rate: 1 ETH = ${ethToXlmRate.toFixed(2)} XLM`);
+    // Log price update (only in development)
+    if (import.meta.env.DEV) {
+      console.log('💱 Exchange Rate Update:', `1 ETH = ${ethToXlmRate.toFixed(2)} XLM`);
+    }
     
     // Success! Try to decrease interval if it was previously increased
     if (currentInterval > 5000 && rateLimitCount > 0) {
@@ -251,8 +246,6 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
     const updateNetworkInfo = () => {
       const currentNetwork = getCurrentNetwork();
       const isTestnetMode = isTestnet();
-      
-      console.log('🔄 Updating network info:', { isTestnetMode, network: currentNetwork.ethereum.displayName });
       
       setNetworkInfo({
         isTestnet: isTestnetMode,
@@ -515,18 +508,16 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log('🚀 Form submitted:', { amount, ethAddress, stellarAddress, direction });
-    console.log('🔍 FRONTEND DEBUG:', {
-      'RAW_AMOUNT': amount,
-      'AMOUNT_TYPE': typeof amount,
-      'AMOUNT_LENGTH': amount.length,
-      'AMOUNT_STRING': String(amount),
-      'PARSED_FLOAT': parseFloat(amount),
-      'DIRECTION': direction
+    // Log transaction details
+    console.log('🚀 Transaction Started:', { 
+      direction: direction === 'eth_to_xlm' ? 'ETH → XLM' : 'XLM → ETH',
+      amount,
+      from: direction === 'eth_to_xlm' ? ethAddress : stellarAddress,
+      to: direction === 'eth_to_xlm' ? stellarAddress : ethAddress
     });
     
     if (!amount || !ethAddress || !stellarAddress) {
-      console.error('❌ Missing required fields:', { amount: !!amount, ethAddress: !!ethAddress, stellarAddress: !!stellarAddress });
+      console.error('❌ Missing required fields');
               alert('Please fill all fields and connect wallets.');
       return;
     }
@@ -759,8 +750,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
             }],
           });
           
-          console.log('📤 Transaction sent:', txHash);
-          console.log('⏳ Waiting for transaction confirmation...');
+          // ALWAYS log transaction details (production too)
+          console.log('✅ ETH Transaction Sent!');
+          console.log('📋 TX Hash:', txHash);
+          console.log('🔗 View on Etherscan:', `${networkInfo.ethereum.explorerUrl}/tx/${txHash}`);
           
           // Update UI status
           setStatusMessage('Gönderiliyor...');
@@ -903,6 +896,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
                 stellarTxHash: processResult.stellarTxId
               });
               
+              console.log('🎉 Cross-Chain Bridge Completed!');
+              console.log('📋 Stellar TX:', processResult.stellarTxId);
+              
               // Update status to completed
               setStatusMessage('Tamamlandı ✅');
               setIsSubmitting(false);
@@ -1042,7 +1038,10 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           const signedTx = TransactionBuilder.fromXDR(signedXdr, stellarNetworkPassphrase);
           const submitResult = await stellarServer.submitTransaction(signedTx);
           
-          console.log('🌟 Stellar transaction submitted:', submitResult.hash);
+          // ALWAYS log transaction details (production too)
+          console.log('✅ Stellar Transaction Sent!');
+          console.log('📋 TX Hash:', submitResult.hash);
+          console.log('🔗 View on Stellar:', `${networkInfo.stellar.explorerUrl}/tx/${submitResult.hash}`);
           
           // Save transaction to history immediately when XLM tx submits
           saveTransactionToHistory({
@@ -1093,6 +1092,9 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
               updateTransactionStatus(result.orderId, 'completed', {
                 ethTxHash: processResult.ethTxId
               });
+              
+              console.log('🎉 Cross-Chain Bridge Completed!');
+              console.log('📋 ETH TX:', processResult.ethTxId);
               
               // Update status to completed
               setStatusMessage('Completed ✅');

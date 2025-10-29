@@ -1407,14 +1407,23 @@ const activeOrders = new Map();
           detectedFrom: storedOrder.contractType
         });
         
-        // Relayer Stellar keys (from environment)
-        const relayerKeypair = Keypair.fromSecret(
-          process.env.RELAYER_STELLAR_SECRET || 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-        );
+        // Relayer Stellar keys (from environment - network specific)
+        const relayerSecretKey = dynamicNetwork === 'mainnet' 
+          ? (process.env.RELAYER_STELLAR_SECRET_MAINNET || process.env.RELAYER_STELLAR_SECRET)
+          : (process.env.RELAYER_STELLAR_SECRET_TESTNET || process.env.RELAYER_STELLAR_SECRET);
+        
+        if (!relayerSecretKey || relayerSecretKey === 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX') {
+          throw new Error(`❌ CRITICAL: Relayer Stellar secret key not configured for ${dynamicNetwork}! Set RELAYER_STELLAR_SECRET_${dynamicNetwork.toUpperCase()} in environment variables.`);
+        }
+        
+        const relayerKeypair = Keypair.fromSecret(relayerSecretKey);
         
         console.log(`🔗 Connecting to Stellar ${dynamicNetwork}...`);
+        console.log(`🔑 Using relayer public key: ${relayerKeypair.publicKey()}`);
         const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
-        console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
+        
+        const relayerBalance = relayerAccount.balances.find(b => b.asset_type === 'native')?.balance || '0';
+        console.log('💰 Relayer XLM balance:', relayerBalance);
 
         // Calculate XLM amount to send using real-time rate from frontend
         const exchangeRate = storedOrder?.exchangeRate || ETH_TO_XLM_RATE; // Use real rate if available
@@ -1422,9 +1431,13 @@ const activeOrders = new Map();
         const ethAmount = parseFloat(ethers.formatEther(orderAmount || '1000000000000000')); // Convert wei to ETH
         const xlmAmount = (ethAmount * exchangeRate).toFixed(7);
         console.log('💱 Using exchange rate:', exchangeRate, 'XLM per ETH');
-        
         console.log('🎯 Sending to user address:', userStellarAddress);
         console.log('💰 XLM amount to send:', xlmAmount);
+        
+        // Check if relayer has sufficient balance
+        if (parseFloat(relayerBalance) < parseFloat(xlmAmount)) {
+          throw new Error(`❌ INSUFFICIENT FUNDS: Relayer has ${relayerBalance} XLM but needs ${xlmAmount} XLM. Please fund relayer wallet: ${relayerKeypair.publicKey()}`);
+        }
         
         // Create payment transaction
         const payment = Operation.payment({
@@ -3131,15 +3144,20 @@ async function processEscrowToStellar(orderId: string, storedOrder: any) {
     
     console.log('🔗 Using Stellar Mainnet for escrow completion');
     
-    // Relayer Stellar keys
-    const relayerKeypair = Keypair.fromSecret(
-      process.env.RELAYER_STELLAR_SECRET_MAINNET || 
-      process.env.RELAYER_STELLAR_SECRET ||
-      'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-    );
+    // Relayer Stellar keys (mainnet specific)
+    const relayerSecretKey = process.env.RELAYER_STELLAR_SECRET_MAINNET || process.env.RELAYER_STELLAR_SECRET;
     
+    if (!relayerSecretKey || relayerSecretKey === 'SAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX') {
+      throw new Error('❌ CRITICAL: Relayer Stellar mainnet secret key not configured! Set RELAYER_STELLAR_SECRET_MAINNET in environment variables.');
+    }
+    
+    const relayerKeypair = Keypair.fromSecret(relayerSecretKey);
+    
+    console.log(`🔑 Using relayer public key (mainnet): ${relayerKeypair.publicKey()}`);
     const relayerAccount = await server.loadAccount(relayerKeypair.publicKey());
-    console.log('💰 Relayer XLM balance:', relayerAccount.balances.find(b => b.asset_type === 'native')?.balance);
+    
+    const relayerBalance = relayerAccount.balances.find(b => b.asset_type === 'native')?.balance || '0';
+    console.log('💰 Relayer XLM balance:', relayerBalance);
     
     // Calculate XLM amount based on exchange rate
     const exchangeRate = storedOrder.exchangeRate || ETH_TO_XLM_RATE;
@@ -3148,6 +3166,11 @@ async function processEscrowToStellar(orderId: string, storedOrder: any) {
     console.log('💱 Exchange rate:', exchangeRate, 'XLM per ETH');
     console.log('🎯 Sending XLM to:', storedOrder.stellarAddress);
     console.log('💰 XLM amount:', xlmAmount);
+    
+    // Check if relayer has sufficient balance
+    if (parseFloat(relayerBalance) < parseFloat(xlmAmount)) {
+      throw new Error(`❌ INSUFFICIENT FUNDS: Relayer has ${relayerBalance} XLM but needs ${xlmAmount} XLM. Please fund relayer wallet: ${relayerKeypair.publicKey()}`);
+    }
     
     // Create payment to user on Stellar (simplified approach)
     const payment = Operation.payment({
