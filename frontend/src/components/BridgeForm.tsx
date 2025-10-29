@@ -1208,7 +1208,7 @@ export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormPro
           <div className="bg-[#1a212f] rounded-xl p-4 text-left border border-white/5 swap-card-bg">
             <div className="mb-2">
               <span className="text-sm text-gray-400">Order ID:</span>
-              <p className="font-mono text-white">{orderId}</p>
+              <p className="font-mono text-white text-sm break-all">{orderId}</p>
             </div>
             <div className="mb-2">
               <span className="text-sm text-gray-400">From:</span>
