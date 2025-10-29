@@ -3,6 +3,8 @@
  * In production, all logs are disabled
  */
 
+/// <reference types="vite/client" />
+
 const isDevelopment = import.meta.env.DEV;
 
 export const logger = {
