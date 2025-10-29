@@ -47,9 +47,7 @@ function App() {
     if (window.ethereum && ethAddress) {
       try {
         const targetChainId = newNetwork === 'mainnet' ? '0x1' : '0xaa36a7'; // 0x1 = 1 (Ethereum Mainnet)
-    const networkName = newNetwork === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
-        
-        console.log(`🔗 Auto-switching MetaMask to ${networkName}...`);
+        const networkName = newNetwork === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
         
         // Try to switch network
         await window.ethereum.request({
@@ -57,12 +55,9 @@ function App() {
           params: [{ chainId: targetChainId }],
         });
         
-        console.log(`✅ MetaMask switched to ${networkName}`);
         toast.success('Network Switched!', `MetaMask switched to ${networkName}`);
         
       } catch (switchError: any) {
-        console.log('🔄 Network switch error:', switchError);
-        
         // If network not added (error 4902), add it
         if (switchError.code === 4902 && newNetwork === 'mainnet') {
           try {
@@ -80,14 +75,11 @@ function App() {
                 }
               }],
             });
-            console.log('✅ Ethereum Mainnet added and switched');
             toast.success('Network Added!', 'Ethereum Mainnet added to MetaMask');
           } catch (addError: any) {
-            console.error('❌ Failed to add Ethereum Mainnet:', addError);
             toast.error('Network Switch Failed', 'Please switch MetaMask manually');
           }
         } else {
-          console.log('⚠️ User rejected network switch or other error');
           toast.warning('Manual Switch Required', 'Please switch MetaMask network manually');
         }
       }
@@ -116,31 +108,24 @@ function App() {
 
   // MetaMask connection
   const connectMetaMask = async () => {
-    console.log('🦊 MetaMask connect clicked!');
     setIsConnecting(true);
     setConnectionError('');
     
     try {
       if (!window.ethereum) {
-        console.error('❌ MetaMask not found');
         throw new Error('MetaMask bulunamadı! Lütfen MetaMask yükleyin.');
       }
 
-      console.log('🦊 Requesting MetaMask accounts...');
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts'
       });
 
-      console.log('🦊 MetaMask accounts received:', accounts);
-
       if (accounts.length > 0) {
-        console.log('🦊 MetaMask connected successfully:', accounts[0]);
         setEthAddress(accounts[0]);
         setShowWalletMenu(false);
         toast.success('MetaMask Connected!', `Connected to ${accounts[0].slice(0, 8)}...${accounts[0].slice(-6)}`);
       }
     } catch (error: any) {
-      console.error('❌ MetaMask connection error:', error);
       setConnectionError(`MetaMask: ${error.message}`);
       toast.error('Connection Failed', error.message);
     } finally {
@@ -262,14 +247,9 @@ function App() {
                     ) : (
                       <button
                         type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('MetaMask button mousedown');
-                          connectMetaMask();
-                        }}
-                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
-                        style={{ pointerEvents: 'auto' }}
+                        onClick={connectMetaMask}
+                        className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 px-4 py-2 rounded-lg transition-colors text-sm"
+                        disabled={isConnecting}
                       >
                         {isConnecting ? 'Connecting...' : 'Connect'}
                       </button>
@@ -301,14 +281,8 @@ function App() {
                     ) : (
                       <button
                         type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('Freighter button mousedown');
-                          handleFreighterConnect();
-                        }}
-                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm cursor-pointer relative z-[110]"
-                        style={{ pointerEvents: 'auto' }}
+                        onClick={handleFreighterConnect}
+                        className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-4 py-2 rounded-lg transition-colors text-sm"
                         disabled={stellarLoading}
                       >
                         {stellarLoading ? 'Connecting...' : 'Connect'}
