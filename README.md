@@ -39,16 +39,40 @@ OverSync enables **secure, trustless token swaps** between Ethereum and Stellar 
 
 ## 🏗️ Architecture
 
+> 📚 **Detailed Technical Documentation**: [ARCHITECTURE.md](./ARCHITECTURE.md)
+
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Ethereum      │    │     Relayer     │    │     Stellar     │
-│                 │    │                 │    │                 │
-│  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │
-│  │   HTLC    │◄─┼────┼─►│  Monitor  │  │    │  │ Claimable │  │
-│  │ Contract  │  │    │  │  Events   │  │    │  │ Balance   │  │
-│  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌──────────────────────┐         ┌──────────────────────┐         ┌──────────────────────┐
+│   ETHEREUM LAYER     │         │   RELAYER SERVICE    │         │   STELLAR LAYER      │
+│                      │         │                      │         │                      │
+│  ┌────────────────┐  │         │  ┌────────────────┐  │         │  ┌────────────────┐  │
+│  │ 1inch Escrow   │  │         │  │ Event Monitor  │  │         │  │   Claimable    │  │
+│  │ Factory        │◄─┼─────────┼─►│ (Ethereum)     │  │         │  │   Balance      │  │
+│  │ (Mainnet)      │  │         │  └────────────────┘  │         │  │   Manager      │  │
+│  └────────────────┘  │         │                      │         │  └────────────────┘  │
+│                      │         │  ┌────────────────┐  │         │                      │
+│  ┌────────────────┐  │         │  │ Event Monitor  │  │         │  ┌────────────────┐  │
+│  │ Custom HTLC    │  │         │  │ (Stellar)      │◄─┼─────────┼─►│   Horizon API  │  │
+│  │ (Sepolia)      │  │         │  └────────────────┘  │         │  │   Integration  │  │
+│  └────────────────┘  │         │                      │         │  └────────────────┘  │
+│                      │         │  ┌────────────────┐  │         │                      │
+│  ┌────────────────┐  │         │  │   Liquidity    │  │         │  ┌────────────────┐  │
+│  │  MetaMask      │  │         │  │   Provider     │  │         │  │   Freighter    │  │
+│  │  Integration   │  │         │  │   (XLM/ETH)    │  │         │  │   Wallet       │  │
+│  └────────────────┘  │         │  └────────────────┘  │         │  └────────────────┘  │
+│                      │         │                      │         │                      │
+└──────────────────────┘         └──────────────────────┘         └──────────────────────┘
+         │                                  │                                  │
+         │                                  │                                  │
+         └──────────────────────────────────┴──────────────────────────────────┘
+                                            │
+                                            ▼
+                              ┌─────────────────────────┐
+                              │   Frontend (React)      │
+                              │   - Wallet Connection   │
+                              │   - Swap Interface      │
+                              │   - Status Tracking     │
+                              └─────────────────────────┘
 ```
 
 ### ⚙️ Dual Contract Approach
