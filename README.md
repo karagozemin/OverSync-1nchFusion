@@ -243,8 +243,8 @@ You can switch networks in two ways:
 
 ### 🔗 Wallet Setup
 
-1. **Install MetaMask**: https://metamask.io/
-2. **Install Freighter**: https://freighter.app/
+1. **Install MetaMask**: https://metamask.io
+2. **Install Freighter**: https://freighter.app
 3. **Fund both wallets** with testnet tokens
 4. **Connect both wallets** in the OverSync UI
 
