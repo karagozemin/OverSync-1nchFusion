@@ -230,7 +230,7 @@ const updateTransactionStatus = (orderId: string, status: 'pending' | 'completed
 };
 
 const SEPOLIA_CHAIN_ID = '0xaa36a7'; // 11155111 in hex
-const API_BASE_URL = 'https://oversync-1nchfusion-production.up.railway.app';
+const API_BASE_URL = 'https://oversync-1nchfusion-2.onrender.com';
 
 export default function BridgeForm({ ethAddress, stellarAddress }: BridgeFormProps) {
   const [direction, setDirection] = useState<'eth_to_xlm' | 'xlm_to_eth'>('eth_to_xlm');

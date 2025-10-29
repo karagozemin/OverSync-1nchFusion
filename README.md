@@ -12,7 +12,7 @@
 
 🌐 **Live App**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/)
 
-🔗 **Backend API**: [https://oversync-1nchfusion-production.up.railway.app/](https://oversync-1nchfusion-production.up.railway.app/)
+🔗 **Backend API**: [https://oversync-1nchfusion-2.onrender.com/](https://oversync-1nchfusion-2.onrender.com/)
 
 Built for **ETHGlobal Unite Hackathon** - Extending 1inch Fusion+ to support Stellar blockchain.
 
@@ -97,7 +97,7 @@ oversync/
 The application is fully deployed and ready to use:
 
 - **Frontend (Vercel)**: [https://over-sync-1nch-fusion-frontend-sigma.vercel.app/](https://over-sync-1nch-fusion-frontend-sigma.vercel.app/)
-- **Backend (Railway)**: [https://oversync-1nchfusion-production.up.railway.app/](https://oversync-1nchfusion-production.up.railway.app/)
+- **Backend (Render)**: [https://oversync-1nchfusion-2.onrender.com/](https://oversync-1nchfusion-2.onrender.com/)
 
 ### Prerequisites
 
